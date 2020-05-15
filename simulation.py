@@ -96,15 +96,30 @@ def create_particles_list(N, box_shape):
     return particles
 
 
-#C heck which particles are colliding and call collide function where relevant
-def check_collision(particles):
-    print()
-
-
 # Collide two particles
-def collide(particles):
-    print()
+def collide(particles, box_shape):
+    
+    #Check walls first
+    for i in range(len(particles)):
+        if particles[i].r[0] < particles[i].rad:
+            particles[i].r[0] = particles[i].rad
+            particles[i].v[0] = -particles[i].v[0]
+            
+        if particles[i].r[0] > (box_shape[0] - particles[i].rad):
+            particles[i].r[0] = box_shape[0] - particles[i].rad
+            particles[i].v[0] = -particles[i].v[0]
 
+        if particles[i].r[1] < particles[i].rad:
+            particles[i].r[1] = particles[i].rad
+            particles[i].v[1] = -particles[i].v[1]
+
+        if particles[i].r[1] > (box_shape[1] - particles[i].rad):
+            particles[i].r[1] = box_shape[1] - particles[i].rad
+            particles[i].v[1] = -particles[i].v[1]
+
+#C heck which particles are colliding and call collide function where relevant
+def check_collision(particles, box_shape):
+    x = 10
 
 # Update particle states
 def update_states(particles, N, dt):
@@ -117,34 +132,7 @@ def update_states(particles, N, dt):
     return particles
 
 
-#Plot particles as circles
-def plot_box(particles, box_shape):
-    
-    fig, ax = plt.subplots()
-    ax.set_xlim(0, box_shape[0])
-    ax.set_ylim(0, box_shape[1])
-    ax.set_aspect('equal')
-    
-    ax.tick_params(
-    axis='both',          # changes apply to the x-axis
-    which='both',      # both major and minor ticks are affected
-    bottom=False,      # ticks along the bottom edge are off
-    left=False,         # ticks along the top edge are off
-    labelbottom=False,
-    labelleft=False) # labels along the bottom edge are off
-    
-    for i in range(len(particles)):
-        ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
-    
-    plt.show(fig)
-    plt.close(fig)
-    
-    # circle1 = Circle(xy=particles[0].r, radius=particles[0].rad)
-    # circle2 = Circle(xy=particles[1].r, radius=particles[1].rad)
-    # ax.add_patch(circle1)
-    # ax.add_patch(circle2)
-
-
+# Function for animation to update each frame
 def update_animation(frame, particles, box_shape, ax, N, dt):
     
     circles = []
@@ -153,22 +141,14 @@ def update_animation(frame, particles, box_shape, ax, N, dt):
         circles.append(Circle(xy=particles[i].r, radius=particles[i].rad))
         ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
     
-    check_collision(particles)
-    collide(particles)
+    check_collision(particles, box_shape)
+    collide(particles, box_shape)
     update_states(particles, N, dt)
     
     return circles
 
-# def init_animation(particles, box_shape):
-    
-#     circles = []
-    
-#     for i in range(len(particles)):
-#         circles.append(Circle(xy=particles[i].r, radius=particles[i].rad))
 
-#     return
-
-
+# Set up axes for animation, creates animation and saves
 def create_animation(particles, box_shape, N, steps, dt):
     
     fig, ax = plt.subplots()
@@ -177,12 +157,12 @@ def create_animation(particles, box_shape, N, steps, dt):
     ax.set_aspect('equal')
     
     ax.tick_params(
-    axis='both',          # changes apply to the x-axis
-    which='both',      # both major and minor ticks are affected
-    bottom=False,      # ticks along the bottom edge are off
-    left=False,         # ticks along the top edge are off
+    axis='both',
+    which='both',
+    bottom=False,
+    left=False,
     labelbottom=False,
-    labelleft=False) # labels along the bottom edge are off
+    labelleft=False)
     
     anim = FuncAnimation(fig, update_animation,
                          fargs=(particles, box_shape, ax, N, dt), 
@@ -191,10 +171,34 @@ def create_animation(particles, box_shape, N, steps, dt):
     anim.save('test.gif', writer='imagemagick', fps=30)
 
 
+#Plot particles as circles
+# Currently ununsed (create_animation instead) but can be used to view a frame
+def plot_box(particles, box_shape):
+    
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, box_shape[0])
+    ax.set_ylim(0, box_shape[1])
+    ax.set_aspect('equal')
+    
+    ax.tick_params(
+    axis='both',
+    which='both',
+    bottom=False,
+    left=False,
+    labelbottom=False,
+    labelleft=False)
+    
+    for i in range(len(particles)):
+        ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
+    
+    plt.show(fig)
+    plt.close(fig)
+
+
 def main():
     
-    N = 2 # Number of particles
-    steps = 100 # Number of time steps
+    N = 5 # Number of particles
+    steps = 250 # Number of time steps
     dt = 0.01 # Size of time step
     box_shape = [10, 10]
     
