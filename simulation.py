@@ -7,7 +7,7 @@ Created on Wed May 13 22:49:50 2020
 """
 
 import numpy as np
-from math import pi
+from math import pi, sqrt
 import matplotlib.pyplot as plt
 # from matplotlib import animation
 from matplotlib.animation import FuncAnimation
@@ -224,28 +224,105 @@ def plot_box(particles, box_shape):
     plt.close(fig)
 
 
+# Find total KE in system
+def KE_tot(particles):
+    
+    KE = 0
+    
+    for i in range(len(particles)):
+        KE += particles[i].KE()
+    
+    return KE
+
+
+# Find mass of smallest particle
+def min_mass(particles):
+    
+    # current_min = particledt = 20s[0].mass
+    
+    # for i in range(len(particles)):
+    #     if particles[i].mass < current_min:
+    #         current_min = particles[i].mass
+    
+    return min(particle.mass for particle in particles)
+    # return current_min
+
+
+# Find radius of smallest particle
+def extreme_val(particles, key, minimum=True, index=None):
+       
+    if minimum:
+        return min(abs(key(particle)) for particle in particles)
+    else:
+        return max(abs(key(particle)) for particle in particles)
+
+
+# Find maximum possible velocity for single particle, if given all initial KE
+def max_v(particles):
+    
+    max_KE = KE_tot(particles)
+    mass = extreme_val(particles, 'mass', minimum=True)
+    v = sqrt(2 * max_KE / mass)
+    
+    return v
+
+
+# Check maximum possible distance a particle could travel in time step
+def max_dist(particles, dt):
+    
+    v = max_v(particles)
+    dist = v * dt
+    return dist
+
+
+# Checks likelihood particles will pass through each other
+def speed_check(particles, dt):
+    
+    dist = max_dist(particles, dt)
+    rad = extreme_val(particles, 'rad', minimum=True)
+
+    if dist > rad:
+        warning = "Warning: particles may pass through each other. " + \
+        "Consider using a smaller dt or max_speed." 
+        print(warning)
+    else:
+        print("Speeds OK")
+
+
 def main():
     
-    N = 10 # Number of particles
-    steps = 500 # Number of time steps
+    N = 2 # Number of particles
+    steps = 250 # Number of time steps
     dt = 0.01 # Size of time step
     max_speed = 10
     box_shape = [10, 10]
     
-    particles = create_particles_list(N, box_shape, max_speed)
-    # print(particles[0].r)
-    # print(particles[1].r)
+    particles = create_particles_list(N, box_shape, max_speed)    
     
-    # plot_box(particles, box_shape)
+    speed_check(particles, dt)
+    initial_KE = KE_tot(particles)
     
     create_animation(particles, box_shape, N, steps, dt)
     
+    final_KE = KE_tot(particles)
+    KE_change = final_KE - initial_KE
+    KE_percent_change = (100 * KE_change) / initial_KE
+    
+    print(f'The kinetic energy change was {KE_change:.2e} \
+          ({KE_percent_change:.2e} %)')
+    
+    # print("Intial KE: ", initial_KE)
+    # print("Final KE: ",  final_KE)
+    # print("KE change :", KE_change, "(", KE_percent_change, "%)")
+    
+    # Plotting frames:
+    # plot_box(particles, box_shape)
+    
     # for i in range(steps):
-        # check_collision(particles)
-        # collide(particles)
-        # particles = update_states(particles, N, dt)
+        # check_collision(particles, box_shape)
+        # wall_collide(particles, box_shape)
+        # update_states(particles, N, dt)
         # plot_box(particles, box_shape)
 
 if __name__ == '__main__':
     main()
-
