@@ -9,10 +9,9 @@ Created on Wed May 13 22:49:50 2020
 import numpy as np
 from math import pi
 import matplotlib.pyplot as plt
-from matplotlib import animation
+# from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
-from celluloid import Camera
 
 
 D = 2 # Number of dimensions
@@ -57,7 +56,7 @@ class Particle:
 # Need to change position so can't be partially outside of box
 # Also consider limits on size/velocity
 # Limits may be implemented via @property i.e. not here?
-def create_particle(box_shape):
+def create_particle(box_shape, max_speed):
 
     mass = 1.0 
     rad = 0.5
@@ -67,24 +66,24 @@ def create_particle(box_shape):
     for i in range(D):        
         r = np.append(r, np.random.uniform(rad, box_shape[i] - rad))
     
-    v = np.random.uniform(-5, 5, D)
+    v = np.random.uniform(-max_speed, max_speed, D)
     
     return Particle(r, v, mass, rad)
 
 
 # Create list of particles. 
 # Currently position and velocity random. Particles are checked to not overlap
-def create_particles_list(N, box_shape):
+def create_particles_list(N, box_shape, max_speed):
     
     particles = []
     
     for i in range(N):
         
-        particle = create_particle(box_shape)
+        particle = create_particle(box_shape, max_speed)
         count = 0
         
         while particle.check_overlap(particles):
-            particle = create_particle(box_shape)
+            particle = create_particle(box_shape, max_speed)
             count += 1
             if (count == 10):
                 print("Unable to place new particle. Consider decreasing N")
@@ -97,7 +96,7 @@ def create_particles_list(N, box_shape):
 
 
 # Collide two particles
-def collide(particles, box_shape):
+def wall_collide(particles, box_shape):
     
     #Check walls first
     for i in range(len(particles)):
@@ -117,9 +116,39 @@ def collide(particles, box_shape):
             particles[i].r[1] = box_shape[1] - particles[i].rad
             particles[i].v[1] = -particles[i].v[1]
 
-#C heck which particles are colliding and call collide function where relevant
+
+# Collide two particles in 1/2D, using ZMF to calculate new velocities
+def particle_collide(p_1, p_2):
+    
+    # Must be np array to perform correct operations
+    vzm = np.add((p_1.v*p_1.mass), (p_2.v*p_2.mass))
+    vzm /= p_1.mass + p_2.mass
+    
+    p_1.v -= vzm
+    p_2.v -= vzm
+    
+    direction = np.subtract(p_1.r, p_2.r) 
+    direction_mag = np.linalg.norm(direction)
+    direction_norm = direction / direction_mag 
+    
+    u_1 = np.linalg.norm(p_1.v)
+    u_2 = np.linalg.norm(p_2.v)
+    
+    p_1.v = direction_norm * u_1
+    p_2.v = direction_norm * -u_2
+    
+    p_1.v += vzm
+    p_2.v += vzm	 
+
+
+# Check which particles are colliding and call collide function where relevant
 def check_collision(particles, box_shape):
-    x = 10
+    
+    for i in range(len(particles)):
+        for j in range(i+1, len(particles)):
+                if particles[i].check_overlap([particles[j]]):
+                    particle_collide(particles[i], particles[j])
+       
 
 # Update particle states
 def update_states(particles, N, dt):
@@ -142,7 +171,7 @@ def update_animation(frame, particles, box_shape, ax, N, dt):
         ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
     
     check_collision(particles, box_shape)
-    collide(particles, box_shape)
+    wall_collide(particles, box_shape)
     update_states(particles, N, dt)
     
     return circles
@@ -197,12 +226,13 @@ def plot_box(particles, box_shape):
 
 def main():
     
-    N = 5 # Number of particles
-    steps = 250 # Number of time steps
+    N = 10 # Number of particles
+    steps = 500 # Number of time steps
     dt = 0.01 # Size of time step
+    max_speed = 10
     box_shape = [10, 10]
     
-    particles = create_particles_list(N, box_shape)
+    particles = create_particles_list(N, box_shape, max_speed)
     # print(particles[0].r)
     # print(particles[1].r)
     
