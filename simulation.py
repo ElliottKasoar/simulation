@@ -9,10 +9,11 @@ Created on Wed May 13 22:49:50 2020
 import numpy as np
 from math import pi, sqrt
 import matplotlib.pyplot as plt
-# from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
-
+from operator import attrgetter
+import time
+import datetime
 
 D = 2 # Number of dimensions
 
@@ -27,6 +28,9 @@ class Particle:
     # Linear momentum (usually np array)
     def momentum(self):
         return self.v * self.mass
+    
+    def speed(self):
+        return np.linalg.norm(self.v)
     
     # Linear kinetic energy
     def KE(self):
@@ -162,7 +166,7 @@ def update_states(particles, N, dt):
 
 
 # Function for animation to update each frame
-def update_animation(frame, particles, box_shape, ax, N, dt):
+def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1, verbose):
     
     circles = []
     
@@ -174,11 +178,22 @@ def update_animation(frame, particles, box_shape, ax, N, dt):
     wall_collide(particles, box_shape)
     update_states(particles, N, dt)
     
+    if verbose:
+        frame_update = np.linspace(1, update_freq-1, update_freq-1)
+        frame_update *= steps//update_freq
+
+        if frame in frame_update:
+            t2 = time.time()
+            total_t = t2 - t1
+            long_time = str(datetime.timedelta(seconds=total_t))
+            print(f'Simulation progress: {(100 * frame/steps):.1f}%. '
+                  f'Current time taken for simulation: {long_time}')
+        
     return circles
 
 
 # Set up axes for animation, creates animation and saves
-def create_animation(particles, box_shape, N, steps, dt):
+def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose):
     
     fig, ax = plt.subplots()
     ax.set_xlim(0, box_shape[0])
@@ -193,11 +208,11 @@ def create_animation(particles, box_shape, N, steps, dt):
     labelbottom=False,
     labelleft=False)
     
-    anim = FuncAnimation(fig, update_animation,
-                         fargs=(particles, box_shape, ax, N, dt), 
-                         frames=steps, interval=2, blit=True)
+    anim = FuncAnimation(fig, update_anim, frames=steps, interval=2, blit=True,
+                         fargs=(particles, box_shape, ax, N, dt, update_freq,
+                                steps, t1, verbose))
     
-    anim.save('test.gif', writer='imagemagick', fps=30)
+    anim.save('test2.gif', writer='imagemagick', fps=30)
 
 
 #Plot particles as circles
@@ -235,94 +250,148 @@ def KE_tot(particles):
     return KE
 
 
-# Find mass of smallest particle
-def min_mass(particles):
+# Find minimum or maximum value of attribute from list of particles
+# Defaults to finding minimum. 
+# Can specify index for attributes in form of arrays e.g. v or r
+def calc_extreme_val(particles, attr, minimum=True, index=None):
     
-    # current_min = particledt = 20s[0].mass
-    
-    # for i in range(len(particles)):
-    #     if particles[i].mass < current_min:
-    #         current_min = particles[i].mass
-    
-    return min(particle.mass for particle in particles)
-    # return current_min
+    key = attrgetter(attr)
 
-
-# Find radius of smallest particle
-def extreme_val(particles, key, minimum=True, index=None):
-       
-    if minimum:
-        return min(abs(key(particle)) for particle in particles)
+    if index is not None:
+        if minimum:
+            return min(abs(key(particle)[index]) for particle in particles)
+        else:
+            return max(abs(key(particle)[index]) for particle in particles)
     else:
-        return max(abs(key(particle)) for particle in particles)
+        if minimum:
+            return min(abs(key(particle)) for particle in particles)
+        else:
+            return max(abs(key(particle)) for particle in particles)
 
 
 # Find maximum possible velocity for single particle, if given all initial KE
-def max_v(particles):
+def calc_max_v(particles):
     
     max_KE = KE_tot(particles)
-    mass = extreme_val(particles, 'mass', minimum=True)
-    v = sqrt(2 * max_KE / mass)
+    min_mass = calc_extreme_val(particles, 'mass', minimum=True)
+    max_v = sqrt(2 * max_KE / min_mass)
     
-    return v
+    return max_v
 
 
 # Check maximum possible distance a particle could travel in time step
-def max_dist(particles, dt):
+def calc_max_dist(particles, dt):
     
-    v = max_v(particles)
-    dist = v * dt
-    return dist
+    v = calc_max_v(particles)
+    max_dist = v * dt
+    
+    return max_dist
+
+
+def calc_expt_av_dist(max_speed, dt):
+    
+    sample_num = 10000000
+    a = np.random.uniform(-max_speed, max_speed, sample_num)
+    b = np.random.uniform(-max_speed, max_speed, sample_num)
+    v_av = np.mean(np.sqrt(np.add(np.square(a), np.square(b))))
+    
+    # This is wrong (too small) - need accurate expression to replace:
+    # v_av = sqrt(2) * max_speed / 2 
+    
+    v_rel = sqrt(2) * v_av
+    expected_av_dist = v_rel * dt
+    
+    return expected_av_dist
+
+
+def calc_actual_av_dist(particles, dt):
+    
+    total = 0
+    for particle in particles:
+        total += particle.speed()
+
+    v_av = total / len(particles)
+    
+    v_rel = sqrt(2) * v_av
+    actual_av_dist = v_rel * dt
+    
+    return actual_av_dist
 
 
 # Checks likelihood particles will pass through each other
-def speed_check(particles, dt):
+def speed_check(particles, dt, max_speed):
     
-    dist = max_dist(particles, dt)
-    rad = extreme_val(particles, 'rad', minimum=True)
+    max_dist = calc_max_dist(particles, dt)
+    expt_av_dist = calc_expt_av_dist(max_speed, dt)
+    actual_av_dist = calc_actual_av_dist(particles, dt)
+    
+    rad = calc_extreme_val(particles, 'rad', minimum=True)
 
-    if dist > rad:
-        warning = "Warning: particles may pass through each other. " + \
-        "Consider using a smaller dt or max_speed." 
+    if actual_av_dist > 2 * rad:
+        warning = ("Warning: particles are highly likely to pass through each "
+                   "other. Consider using a smaller dt or max_speed.")
         print(warning)
+    
+    elif expt_av_dist > 2 * rad:
+        warning = ("Warning: particles are likely to pass through each other. "
+                   "This is expected given the max_speed and dt specified. "
+                   "Consider using a smaller dt or max_speed.")
+        print(warning)
+        
+    elif max_dist > 2 * rad:
+        warning = ("Warning: particles may pass through each other. "
+                   "Consider using a smaller dt or max_speed.")
+        print(warning)
+    
     else:
-        print("Speeds OK")
+        print('max_speed and dt should be OK.')
+    
+    print(f'Maximum distance that can be travelled: {max_dist:.2f}.')
+    print(f'Expected average distance travelled: {expt_av_dist:.2f}.')
+    print(f'Actual average distance travelled: {actual_av_dist:.2f}.')
+    print(f'Smallest particle radius: {rad:.2f}')
 
 
 def main():
     
-    N = 2 # Number of particles
-    steps = 250 # Number of time steps
+    N = 5 # Number of particles
+    steps = 100 # Number of time steps
     dt = 0.01 # Size of time step
-    max_speed = 10
-    box_shape = [10, 10]
+    max_speed = 10 # Maximum magnitude of vx and vy
+    box_shape = [10, 10] # Shape of box particles are in (x,y)
+    update_freq = 5
+    verbose = False
     
-    particles = create_particles_list(N, box_shape, max_speed)    
+    particles = create_particles_list(N, box_shape, max_speed)
     
-    speed_check(particles, dt)
-    initial_KE = KE_tot(particles)
+    if verbose:
+        # Check likelihood of particles passing through each other
+        speed_check(particles, dt, max_speed)
+        
+        # Check initial KE so can track and confirm conservation
+        initial_KE = KE_tot(particles)
     
-    create_animation(particles, box_shape, N, steps, dt)
+    t1 = time.time()
     
-    final_KE = KE_tot(particles)
-    KE_change = final_KE - initial_KE
-    KE_percent_change = (100 * KE_change) / initial_KE
+    # Create animation of simulation
+    create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose)
     
-    print(f'The kinetic energy change was {KE_change:.2e} \
-          ({KE_percent_change:.2e} %)')
+    if verbose:
+        t2 = time.time()
+        total_t = t2 - t1
+        if total_t > 60:
+            long_time = str(datetime.timedelta(seconds=total_t))
+            print(f'Time taken for simulation: {long_time}')
+        else:
+            print(f'Time taken for simulation: {total_t:.2f}s')
+        
+        final_KE = KE_tot(particles)
+        KE_change = final_KE - initial_KE
+        KE_percent_change = (100 * KE_change) / initial_KE
+        KE_txt = (f'The kinetic energy change was {KE_change:.2e}'
+                  f'({KE_percent_change:.2e} %)')
+        print(KE_txt)
     
-    # print("Intial KE: ", initial_KE)
-    # print("Final KE: ",  final_KE)
-    # print("KE change :", KE_change, "(", KE_percent_change, "%)")
-    
-    # Plotting frames:
-    # plot_box(particles, box_shape)
-    
-    # for i in range(steps):
-        # check_collision(particles, box_shape)
-        # wall_collide(particles, box_shape)
-        # update_states(particles, N, dt)
-        # plot_box(particles, box_shape)
 
 if __name__ == '__main__':
     main()
