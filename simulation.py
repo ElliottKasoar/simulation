@@ -40,8 +40,9 @@ class Particle:
     def area(self):
         return pi * self.rad**2
     
-    # Check if particles overlap
-    # Returns True if particle overlaps with existing particles, else False
+    # Check if a particle overlaps with a list of particles
+    # Returns True if particle overlaps with any other in list, else False
+    # Note: will return True if particle exists in list passed
     def check_overlap(self, particles):
         
         no_overlap = True # True if there is no overlap
@@ -54,6 +55,27 @@ class Particle:
         
         overlap = not(no_overlap)
         return overlap
+    
+    # Update states for next time step. Also handles collisions with walls
+    def update_state(self, dt, box_shape):
+        
+        self.r += self.v * dt
+        
+        if self.r[0] < self.rad:
+            self.r[0] = self.rad
+            self.v[0] = -self.v[0]
+        
+        if self.r[0] > (box_shape[0] - self.rad):
+            self.r[0] = box_shape[0] - self.rad
+            self.v[0] = -self.v[0]
+        
+        if self.r[1] < self.rad:
+            self.r[1] = self.rad
+            self.v[1] = -self.v[1]
+        
+        if self.r[1] > (box_shape[1] - self.rad):
+            self.r[1] = box_shape[1] - self.rad
+            self.v[1] = -self.v[1]
 
 
 # Creates single particle, currently with random position and velocity
@@ -61,13 +83,13 @@ class Particle:
 # Also consider limits on size/velocity
 # Limits may be implemented via @property i.e. not here?
 def create_particle(box_shape, max_speed):
-
+    
     mass = 1.0 
     rad = 0.5
     
     r = np.array(())
     
-    for i in range(D):        
+    for i in range(D):
         r = np.append(r, np.random.uniform(rad, box_shape[i] - rad))
     
     v = np.random.uniform(-max_speed, max_speed, D)
@@ -92,77 +114,48 @@ def create_particles_list(N, box_shape, max_speed):
             if (count == 10):
                 print("Unable to place new particle. Consider decreasing N")
                 break
-            
+        
         if count < 10:
             particles.append(particle)
     
     return particles
 
 
-# Collide two particles
-def wall_collide(particles, box_shape):
-    
-    #Check walls first
-    for i in range(len(particles)):
-        if particles[i].r[0] < particles[i].rad:
-            particles[i].r[0] = particles[i].rad
-            particles[i].v[0] = -particles[i].v[0]
-            
-        if particles[i].r[0] > (box_shape[0] - particles[i].rad):
-            particles[i].r[0] = box_shape[0] - particles[i].rad
-            particles[i].v[0] = -particles[i].v[0]
-
-        if particles[i].r[1] < particles[i].rad:
-            particles[i].r[1] = particles[i].rad
-            particles[i].v[1] = -particles[i].v[1]
-
-        if particles[i].r[1] > (box_shape[1] - particles[i].rad):
-            particles[i].r[1] = box_shape[1] - particles[i].rad
-            particles[i].v[1] = -particles[i].v[1]
-
-
 # Collide two particles in 1/2D, using ZMF to calculate new velocities
-def particle_collide(p_1, p_2):
+def particle_collide(p1, p2):
     
-    # Must be np array to perform correct operations
-    vzm = np.add((p_1.v*p_1.mass), (p_2.v*p_2.mass))
-    vzm /= p_1.mass + p_2.mass
+    # Calculuate ZMF velocity
+    # Must be np arrays to perform correct operations
+    vzm = np.add((p1.v*p1.mass), (p2.v*p2.mass))
+    vzm /= p1.mass + p2.mass
     
-    p_1.v -= vzm
-    p_2.v -= vzm
+    # Velocities in ZMF:
+    p1_v = np.subtract(p1.v, vzm)
+    p2_v = np.subtract(p2.v, vzm)
     
-    direction = np.subtract(p_1.r, p_2.r) 
+    # Normalised vector connecting centres of particles
+    direction = np.subtract(p1.r, p2.r) 
     direction_mag = np.linalg.norm(direction)
-    direction_norm = direction / direction_mag 
+    direction_norm = direction / direction_mag
     
-    u_1 = np.linalg.norm(p_1.v)
-    u_2 = np.linalg.norm(p_2.v)
+    # Magnitude of velocities along direction of line of centres
+    u_1 = np.linalg.norm(p1_v)
+    u_2 = np.linalg.norm(p2_v)
+    p1_v = direction_norm * u_1
+    p2_v = direction_norm * (-u_2)
     
-    p_1.v = direction_norm * u_1
-    p_2.v = direction_norm * -u_2
-    
-    p_1.v += vzm
-    p_2.v += vzm	 
+    # Update velocities in lab frame
+    p1.v = p1_v + vzm
+    p2.v = p2_v + vzm
 
 
 # Check which particles are colliding and call collide function where relevant
-def check_collision(particles, box_shape):
-    
-    for i in range(len(particles)):
-        for j in range(i+1, len(particles)):
-                if particles[i].check_overlap([particles[j]]):
-                    particle_collide(particles[i], particles[j])
-       
-
-# Update particle states
-def update_states(particles, N, dt):
+def check_collision(particles, box_shape, N):
     
     for i in range(N):
-        # print("Initial position: ", particles[i].r)
-        particles[i].r += particles[i].v * dt
-        # print("Updated position: ", particles[i].r)
-    
-    return particles
+        for j in range(i+1, N):
+                if particles[i].check_overlap([particles[j]]):
+                    particle_collide(particles[i], particles[j])
 
 
 # Function for animation to update each frame
@@ -170,18 +163,19 @@ def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1, 
     
     circles = []
     
-    for i in range(len(particles)):
+    for i in range(N):
         circles.append(Circle(xy=particles[i].r, radius=particles[i].rad))
         ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
     
-    check_collision(particles, box_shape)
-    wall_collide(particles, box_shape)
-    update_states(particles, N, dt)
+    check_collision(particles, box_shape, N)
+    
+    for i in range(N):
+        particles[i].update_state(dt, box_shape)
     
     if verbose:
         frame_update = np.linspace(1, update_freq-1, update_freq-1)
         frame_update *= steps//update_freq
-
+        
         if frame in frame_update:
             t2 = time.time()
             total_t = t2 - t1
@@ -217,7 +211,7 @@ def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose):
 
 #Plot particles as circles
 # Currently ununsed (create_animation instead) but can be used to view a frame
-def plot_box(particles, box_shape):
+def plot_box(particles, box_shape, N):
     
     fig, ax = plt.subplots()
     ax.set_xlim(0, box_shape[0])
@@ -232,7 +226,7 @@ def plot_box(particles, box_shape):
     labelbottom=False,
     labelleft=False)
     
-    for i in range(len(particles)):
+    for i in range(N):
         ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
     
     plt.show(fig)
@@ -240,11 +234,11 @@ def plot_box(particles, box_shape):
 
 
 # Find total KE in system
-def KE_tot(particles):
+def KE_tot(particles, N):
     
     KE = 0
     
-    for i in range(len(particles)):
+    for i in range(N):
         KE += particles[i].KE()
     
     return KE
@@ -270,9 +264,9 @@ def calc_extreme_val(particles, attr, minimum=True, index=None):
 
 
 # Find maximum possible velocity for single particle, if given all initial KE
-def calc_max_v(particles):
+def calc_max_v(particles, N):
     
-    max_KE = KE_tot(particles)
+    max_KE = KE_tot(particles, N)
     min_mass = calc_extreme_val(particles, 'mass', minimum=True)
     max_v = sqrt(2 * max_KE / min_mass)
     
@@ -280,9 +274,9 @@ def calc_max_v(particles):
 
 
 # Check maximum possible distance a particle could travel in time step
-def calc_max_dist(particles, dt):
+def calc_max_dist(particles, dt, N):
     
-    v = calc_max_v(particles)
+    v = calc_max_v(particles, N)
     max_dist = v * dt
     
     return max_dist
@@ -290,27 +284,28 @@ def calc_max_dist(particles, dt):
 
 def calc_expt_av_dist(max_speed, dt):
     
-    sample_num = 10000000
-    a = np.random.uniform(-max_speed, max_speed, sample_num)
-    b = np.random.uniform(-max_speed, max_speed, sample_num)
-    v_av = np.mean(np.sqrt(np.add(np.square(a), np.square(b))))
+    # Approx
+    # sample_num = 10000000
+    # a = np.random.uniform(-max_speed, max_speed, sample_num)
+    # b = np.random.uniform(-max_speed, max_speed, sample_num)
+    # v_av = np.mean(np.sqrt(np.add(np.square(a), np.square(b))))
     
-    # This is wrong (too small) - need accurate expression to replace:
-    # v_av = sqrt(2) * max_speed / 2 
-    
+    # Actual expression in 2D:
+    v_av = max_speed * (sqrt(2) + np.arcsinh((1))) / 3
+        
     v_rel = sqrt(2) * v_av
     expected_av_dist = v_rel * dt
     
     return expected_av_dist
 
 
-def calc_actual_av_dist(particles, dt):
+def calc_actual_av_dist(particles, dt, N):
     
     total = 0
     for particle in particles:
         total += particle.speed()
 
-    v_av = total / len(particles)
+    v_av = total / N
     
     v_rel = sqrt(2) * v_av
     actual_av_dist = v_rel * dt
@@ -319,11 +314,11 @@ def calc_actual_av_dist(particles, dt):
 
 
 # Checks likelihood particles will pass through each other
-def speed_check(particles, dt, max_speed):
+def speed_check(particles, dt, max_speed, N):
     
-    max_dist = calc_max_dist(particles, dt)
+    max_dist = calc_max_dist(particles, dt, N)
     expt_av_dist = calc_expt_av_dist(max_speed, dt)
-    actual_av_dist = calc_actual_av_dist(particles, dt)
+    actual_av_dist = calc_actual_av_dist(particles, dt, N)
     
     rad = calc_extreme_val(particles, 'rad', minimum=True)
 
@@ -355,21 +350,21 @@ def speed_check(particles, dt, max_speed):
 def main():
     
     N = 5 # Number of particles
-    steps = 100 # Number of time steps
+    steps = 200 # Number of time steps
     dt = 0.01 # Size of time step
     max_speed = 10 # Maximum magnitude of vx and vy
     box_shape = [10, 10] # Shape of box particles are in (x,y)
     update_freq = 5
-    verbose = False
+    verbose = True
     
     particles = create_particles_list(N, box_shape, max_speed)
     
     if verbose:
         # Check likelihood of particles passing through each other
-        speed_check(particles, dt, max_speed)
+        speed_check(particles, dt, max_speed, N)
         
         # Check initial KE so can track and confirm conservation
-        initial_KE = KE_tot(particles)
+        initial_KE = KE_tot(particles, N)
     
     t1 = time.time()
     
@@ -385,7 +380,7 @@ def main():
         else:
             print(f'Time taken for simulation: {total_t:.2f}s')
         
-        final_KE = KE_tot(particles)
+        final_KE = KE_tot(particles, N)
         KE_change = final_KE - initial_KE
         KE_percent_change = (100 * KE_change) / initial_KE
         KE_txt = (f'The kinetic energy change was {KE_change:.2e}'
