@@ -19,11 +19,14 @@ D = 2 # Number of dimensions
 
 class Particle:
     
-    def __init__(self, r=np.zeros(D), v=np.zeros(D), mass=1.0, rad=0.5):
+    def __init__(self, r=np.zeros(D), v=np.zeros(D), mass=1.0, rad=0.5,
+                 colour='tab:blue'):
+        
         self.r = r # Position
         self.v = v # Velocity
         self.mass = mass # Inverse mass
         self.rad = rad # Radius
+        self.colour = colour # Colour of particle when plotting
     
     # Linear momentum (usually np array)
     def momentum(self):
@@ -77,48 +80,10 @@ class Particle:
             self.r[1] = box_shape[1] - self.rad
             self.v[1] = -self.v[1]
 
-
-# Creates single particle, currently with random position and velocity
-# Need to change position so can't be partially outside of box
-# Also consider limits on size/velocity
-# Limits may be implemented via @property i.e. not here?
-def create_particle(box_shape, max_speed):
-    
-    mass = 1.0 
-    rad = 0.5
-    
-    r = np.array(())
-    
-    for i in range(D):
-        r = np.append(r, np.random.uniform(rad, box_shape[i] - rad))
-    
-    v = np.random.uniform(-max_speed, max_speed, D)
-    
-    return Particle(r, v, mass, rad)
-
-
-# Create list of particles. 
-# Currently position and velocity random. Particles are checked to not overlap
-def create_particles_list(N, box_shape, max_speed):
-    
-    particles = []
-    
-    for i in range(N):
-        
-        particle = create_particle(box_shape, max_speed)
-        count = 0
-        
-        while particle.check_overlap(particles):
-            particle = create_particle(box_shape, max_speed)
-            count += 1
-            if (count == 10):
-                print("Unable to place new particle. Consider decreasing N")
-                break
-        
-        if count < 10:
-            particles.append(particle)
-    
-    return particles
+    def plot_circle(self, ax):
+        circle = Circle(xy=self.r, radius=self.rad, color=self.colour)
+        ax.add_patch(circle)
+        return circle
 
 
 # Collide two particles in 1/2D, using ZMF to calculate new velocities
@@ -159,13 +124,13 @@ def check_collision(particles, box_shape, N):
 
 
 # Function for animation to update each frame
-def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1, verbose):
+def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1,
+                verbose):
     
-    circles = []
+    circles = []    
     
     for i in range(N):
-        circles.append(Circle(xy=particles[i].r, radius=particles[i].rad))
-        ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
+        circles.append(particles[i].plot_circle(ax))
     
     check_collision(particles, box_shape, N)
     
@@ -282,13 +247,15 @@ def calc_max_dist(particles, dt, N):
     return max_dist
 
 
-def calc_expt_av_dist(max_speed, dt):
+def calc_expt_av_dist(min_vel, max_vel, dt):
     
     # Approx
     # sample_num = 10000000
-    # a = np.random.uniform(-max_speed, max_speed, sample_num)
-    # b = np.random.uniform(-max_speed, max_speed, sample_num)
+    # a = np.random.uniform(min_vel, max_vel, sample_num)
+    # b = np.random.uniform(min_vel, max_vel, sample_num)
     # v_av = np.mean(np.sqrt(np.add(np.square(a), np.square(b))))
+    
+    max_speed = abs(max([min_vel, max_vel], key=abs))
     
     # Actual expression in 2D:
     v_av = max_speed * (sqrt(2) + np.arcsinh((1))) / 3
@@ -314,10 +281,10 @@ def calc_actual_av_dist(particles, dt, N):
 
 
 # Checks likelihood particles will pass through each other
-def speed_check(particles, dt, max_speed, N):
+def speed_check(particles, dt, min_vel, max_vel, N):
     
     max_dist = calc_max_dist(particles, dt, N)
-    expt_av_dist = calc_expt_av_dist(max_speed, dt)
+    expt_av_dist = calc_expt_av_dist(min_vel, max_vel, dt)
     actual_av_dist = calc_actual_av_dist(particles, dt, N)
     
     rad = calc_extreme_val(particles, 'rad', minimum=True)
@@ -347,21 +314,86 @@ def speed_check(particles, dt, max_speed, N):
     print(f'Smallest particle radius: {rad:.2f}')
 
 
+# Creates single particle, currently with random position and velocity
+# Need to change position so can't be partially outside of box
+# Also consider limits on size/velocity
+# Limits may be implemented via @property i.e. not here?
+def create_particle(box_shape, min_vel, max_vel, min_mass, max_mass, min_rad,
+                    max_rad):
+    
+    if min_mass==max_mass :
+        mass = min_mass
+        colour = 'tab:blue'
+    else:
+        mass = np.random.uniform(min_mass, max_mass)
+        colour = (0,0, mass/max_mass)
+        
+    if min_rad==max_mass:
+        rad = min_rad
+    else:
+        rad = np.random.uniform(min_rad, max_rad)
+    
+    r = np.array(())
+    
+    for i in range(D):
+        r = np.append(r, np.random.uniform(rad, box_shape[i] - rad))
+    
+    v = np.random.uniform(min_vel, max_vel, D)
+    
+    return Particle(r, v, mass, rad, colour)
+
+
+# Create list of particles. 
+# Currently position and velocity random. Particles are checked to not overlap
+def create_particles_list(N, box_shape, min_vel, max_vel, min_mass, max_mass,
+                          min_rad, max_rad):
+    
+    particles = []
+    
+    for i in range(N):
+        
+        particle = create_particle(box_shape, min_vel, max_vel, 
+                                   min_mass, max_mass, min_rad, max_rad)
+        count = 0
+        
+        while particle.check_overlap(particles):
+            particle = create_particle(box_shape, min_vel, max_vel,
+                                       min_mass, max_mass, min_rad, max_rad)
+            count += 1
+            
+            if (count == 10):
+                print("Unable to place new particle. Consider decreasing N")
+                break
+        
+        if count < 10:
+            particles.append(particle)
+    
+    return particles
+
+
 def main():
     
     N = 5 # Number of particles
     steps = 200 # Number of time steps
     dt = 0.01 # Size of time step
-    max_speed = 10 # Maximum magnitude of vx and vy
     box_shape = [10, 10] # Shape of box particles are in (x,y)
-    update_freq = 5
-    verbose = True
     
-    particles = create_particles_list(N, box_shape, max_speed)
+    min_vel = 10 # Maximum magnitude of vx and vy
+    max_vel = 10
+    min_rad = 0.5
+    max_rad = 1
+    min_mass = 1.0
+    max_mass = 10.0
+    
+    verbose = True
+    update_freq = 5
+    
+    particles = create_particles_list(N, box_shape, min_vel, max_vel,
+                                      min_mass, max_mass, min_rad, max_rad)
     
     if verbose:
         # Check likelihood of particles passing through each other
-        speed_check(particles, dt, max_speed, N)
+        speed_check(particles, dt, min_vel, max_vel, N)
         
         # Check initial KE so can track and confirm conservation
         initial_KE = KE_tot(particles, N)
