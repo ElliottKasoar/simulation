@@ -20,12 +20,13 @@ D = 2 # Number of dimensions
 class Particle:
     
     def __init__(self, r=np.zeros(D), v=np.zeros(D), mass=1.0, rad=0.5,
-                 colour='tab:blue'):
+                 charge=0, colour='tab:blue'):
         
         self.r = r # Position
         self.v = v # Velocity
         self.mass = mass # Inverse mass
         self.rad = rad # Radius
+        self.charge = charge # Radius
         self.colour = colour # Colour of particle when plotting
     
     # Linear momentum (usually np array)
@@ -38,6 +39,10 @@ class Particle:
     # Linear kinetic energy
     def KE(self):
         return 0.5 * self.mass * np.sum(self.v**2)
+
+    # Linear kinetic energy
+    def GPE(self, g):
+        return self.mass * g * self.r[1]
     
     # Area of particle
     def area(self):
@@ -82,8 +87,19 @@ class Particle:
 
     def plot_circle(self, ax):
         circle = Circle(xy=self.r, radius=self.rad, color=self.colour)
+        # print(self.colour)
         ax.add_patch(circle)
         return circle
+
+
+# F = dP/dt => dv = F dt / m
+def force_particle(p1, dt):
+    
+    F = np.array([0, -9.81*p1.mass])
+    
+    dv = F * dt / p1.mass
+    
+    p1.v += dv
 
 
 # Collide two particles in 1/2D, using ZMF to calculate new velocities
@@ -136,6 +152,8 @@ def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1,
     
     for i in range(N):
         particles[i].update_state(dt, box_shape)
+        force_particle(particles[i], dt)
+
     
     if verbose:
         frame_update = np.linspace(1, update_freq-1, update_freq-1)
@@ -158,7 +176,7 @@ def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose):
     ax.set_xlim(0, box_shape[0])
     ax.set_ylim(0, box_shape[1])
     ax.set_aspect('equal')
-    
+
     ax.tick_params(
     axis='both',
     which='both',
@@ -166,12 +184,14 @@ def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose):
     left=False,
     labelbottom=False,
     labelleft=False)
+
+    # plt.figure(dpi=10)
     
     anim = FuncAnimation(fig, update_anim, frames=steps, interval=2, blit=True,
                          fargs=(particles, box_shape, ax, N, dt, update_freq,
                                 steps, t1, verbose))
     
-    anim.save('test2.gif', writer='imagemagick', fps=30)
+    anim.save('particles_grav.gif', writer='pillow', fps=60)
 
 
 #Plot particles as circles
@@ -195,18 +215,32 @@ def plot_box(particles, box_shape, N):
         ax.add_patch(Circle(xy=particles[i].r, radius=particles[i].rad))
     
     plt.show(fig)
+    fig.savefig('Box.pdf', dps=1000)
     plt.close(fig)
 
 
 # Find total KE in system
-def KE_tot(particles, N):
+def calc_E_tot(particles, N, grav, g):
     
     KE = 0
-    
+        
     for i in range(N):
         KE += particles[i].KE()
+        
+    if grav:
+        
+        GPE = 0
+        
+        for i in range(N):
+            GPE += particles[i].GPE(g)
+        
+        E_tot = KE + GPE
     
-    return KE
+    else:
+        
+        E_tot = KE
+    
+    return E_tot
 
 
 # Find minimum or maximum value of attribute from list of particles
@@ -229,9 +263,9 @@ def calc_extreme_val(particles, attr, minimum=True, index=None):
 
 
 # Find maximum possible velocity for single particle, if given all initial KE
-def calc_max_v(particles, N):
+def calc_max_v(particles, N, grav, g):
     
-    max_KE = KE_tot(particles, N)
+    max_KE = calc_E_tot(particles, N, grav, g)
     min_mass = calc_extreme_val(particles, 'mass', minimum=True)
     max_v = sqrt(2 * max_KE / min_mass)
     
@@ -239,9 +273,9 @@ def calc_max_v(particles, N):
 
 
 # Check maximum possible distance a particle could travel in time step
-def calc_max_dist(particles, dt, N):
+def calc_max_dist(particles, dt, N, grav, g):
     
-    v = calc_max_v(particles, N)
+    v = calc_max_v(particles, N, grav, g)
     max_dist = v * dt
     
     return max_dist
@@ -281,9 +315,9 @@ def calc_actual_av_dist(particles, dt, N):
 
 
 # Checks likelihood particles will pass through each other
-def speed_check(particles, dt, min_vel, max_vel, N):
+def speed_check(particles, dt, min_vel, max_vel, N, grav, g):
     
-    max_dist = calc_max_dist(particles, dt, N)
+    max_dist = calc_max_dist(particles, dt, N, grav, g)
     expt_av_dist = calc_expt_av_dist(min_vel, max_vel, dt)
     actual_av_dist = calc_actual_av_dist(particles, dt, N)
     
@@ -326,9 +360,9 @@ def create_particle(box_shape, min_vel, max_vel, min_mass, max_mass, min_rad,
         colour = 'tab:blue'
     else:
         mass = np.random.uniform(min_mass, max_mass)
-        colour = (0,0, mass/max_mass)
+        colour = (0,0, 1-(mass/max_mass))
         
-    if min_rad==max_mass:
+    if min_rad==max_rad:
         rad = min_rad
     else:
         rad = np.random.uniform(min_rad, max_rad)
@@ -336,11 +370,16 @@ def create_particle(box_shape, min_vel, max_vel, min_mass, max_mass, min_rad,
     r = np.array(())
     
     for i in range(D):
+        
+        if (box_shape[i] - 2*rad < 0):
+            print("Warning: particle is too large for box")
         r = np.append(r, np.random.uniform(rad, box_shape[i] - rad))
     
     v = np.random.uniform(min_vel, max_vel, D)
     
-    return Particle(r, v, mass, rad, colour)
+    charge = 0
+    
+    return Particle(r, v, mass, rad, charge, colour)
 
 
 # Create list of particles. 
@@ -362,7 +401,8 @@ def create_particles_list(N, box_shape, min_vel, max_vel, min_mass, max_mass,
             count += 1
             
             if (count == 10):
-                print("Unable to place new particle. Consider decreasing N")
+                print("Unable to place new particle. Consider decreasing N "
+                      "or increasing box size")
                 break
         
         if count < 10:
@@ -370,20 +410,28 @@ def create_particles_list(N, box_shape, min_vel, max_vel, min_mass, max_mass,
     
     return particles
 
-
+# To do list:
+# Limits on inputs e.g. negative mass/radius?
+# Figure out defaults
+# Add forces e.g. grav, force from B field (via charge)
 def main():
     
-    N = 5 # Number of particles
-    steps = 200 # Number of time steps
-    dt = 0.01 # Size of time step
-    box_shape = [10, 10] # Shape of box particles are in (x,y)
+    N = 1 # Number of particles. Default = 6
+    steps = 36 # Number of time steps. Default = 600
+    dt = 1/120 # Size of time step.  Default = 1/120
+    box_shape = [1, 1] # Size of box. Default = [1,1]
     
-    min_vel = 10 # Maximum magnitude of vx and vy
-    max_vel = 10
-    min_rad = 0.5
-    max_rad = 1
-    min_mass = 1.0
-    max_mass = 10.0
+    grav = True
+    g = 9.81
+    
+    min_vel = 0.0 #  # Default = -0.5. Maximum magnitude of vx and vy
+    max_vel = 0.0  # Default = 0.5
+    
+    min_rad = 0.02 # Default = 0.02
+    max_rad = 0.1 # Default = 0.1
+    
+    min_mass = 1.0 # Default = 1.0
+    max_mass = 10.0 # Default = 10.0
     
     verbose = True
     update_freq = 5
@@ -391,12 +439,14 @@ def main():
     particles = create_particles_list(N, box_shape, min_vel, max_vel,
                                       min_mass, max_mass, min_rad, max_rad)
     
+    N = len(particles)
+    
     if verbose:
         # Check likelihood of particles passing through each other
-        speed_check(particles, dt, min_vel, max_vel, N)
+        speed_check(particles, dt, min_vel, max_vel, N, grav, g)
         
         # Check initial KE so can track and confirm conservation
-        initial_KE = KE_tot(particles, N)
+        initial_E = calc_E_tot(particles, N, grav, g)
     
     t1 = time.time()
     
@@ -412,12 +462,12 @@ def main():
         else:
             print(f'Time taken for simulation: {total_t:.2f}s')
         
-        final_KE = KE_tot(particles, N)
-        KE_change = final_KE - initial_KE
-        KE_percent_change = (100 * KE_change) / initial_KE
-        KE_txt = (f'The kinetic energy change was {KE_change:.2e}'
-                  f'({KE_percent_change:.2e} %)')
-        print(KE_txt)
+        final_E = calc_E_tot(particles, N, grav, g)
+        E_change = final_E - initial_E
+        E_percent_change = (100 * E_change) / initial_E
+        E_txt = (f'The energy change was {E_change:.2e} '
+                  f'({E_percent_change:.2e} %)')
+        print(E_txt)
     
 
 if __name__ == '__main__':
