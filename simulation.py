@@ -19,28 +19,31 @@ D = 2 # Number of dimensions
 
 class Particle:
     
-    def __init__(self, r=np.zeros(D), v=np.zeros(D), mass=1.0, rad=0.5,
-                 charge=0, colour='tab:blue'):
+    def __init__(self, r=np.zeros(D), u=np.zeros(D), mass=1.0, rad=0.5,
+                 charge=0, colour='tab:blue', v=np.zeros(D), a=np.zeros(D)):
         
         self.r = r # Position
-        self.v = v # Velocity
+        self.u = u # Velocity at start of time step
+        self.v = v # Velocity at end of time step
+        self.a = a # Acceleration
         self.mass = mass # Inverse mass
         self.rad = rad # Radius
         self.charge = charge # Radius
         self.colour = colour # Colour of particle when plotting
     
-    # Linear momentum (usually np array)
+    # Linear momentum at start of time step (usually np array)
     def momentum(self):
-        return self.v * self.mass
+        return self.u * self.mass
     
+    # Speed of particles at start of time step
     def speed(self):
-        return np.linalg.norm(self.v)
+        return np.linalg.norm(self.u)
     
-    # Linear kinetic energy
+    # Linear kinetic energy at stat of time step
     def KE(self):
-        return 0.5 * self.mass * np.sum(self.v**2)
+        return 0.5 * self.mass * np.sum(self.u**2)
 
-    # Linear kinetic energy
+    # Gravitational potential energy
     def GPE(self, g):
         return self.mass * g * self.r[1]
     
@@ -65,25 +68,10 @@ class Particle:
         return overlap
     
     # Update states for next time step. Also handles collisions with walls
-    def update_state(self, dt, box_shape):
-        
-        self.r += self.v * dt
-        
-        if self.r[0] < self.rad:
-            self.r[0] = self.rad
-            self.v[0] = -self.v[0]
-        
-        if self.r[0] > (box_shape[0] - self.rad):
-            self.r[0] = box_shape[0] - self.rad
-            self.v[0] = -self.v[0]
-        
-        if self.r[1] < self.rad:
-            self.r[1] = self.rad
-            self.v[1] = -self.v[1]
-        
-        if self.r[1] > (box_shape[1] - self.rad):
-            self.r[1] = box_shape[1] - self.rad
-            self.v[1] = -self.v[1]
+    def update_state(self, dt):
+    
+        self.r += 0.5 * np.add(self.u, self.v) * dt
+        self.u = self.v
 
     def plot_circle(self, ax):
         circle = Circle(xy=self.r, radius=self.rad, color=self.colour)
@@ -93,13 +81,38 @@ class Particle:
 
 
 # F = dP/dt => dv = F dt / m
-def force_particle(p1, dt):
+def force_particle(particle, dt, grav, g):
     
-    F = np.array([0, -9.81*p1.mass])
+    if grav:
+        F = np.array([0, -g  * particle.mass])
+    else:
+        F =  np.zeros(D)
     
-    dv = F * dt / p1.mass
+    particle.a = np.divide(F, particle.mass)
     
-    p1.v += dv
+    dv = np.multiply(particle.a, dt)
+    
+    particle.v = np.add(particle.u, dv)
+
+
+# Collide particle with wall
+def wall_collide(particle, box_shape):
+    
+    if particle.r[0] < particle.rad:
+        # particle.r[0] = particle.rad
+        particle.u[0] = -particle.u[0]
+    
+    if particle.r[0] > (box_shape[0] - particle.rad):
+        # particle.r[0] = box_shape[0] - particle.rad
+        particle.u[0] = -particle.u[0]
+    
+    if particle.r[1] < particle.rad:
+        # particle.r[1] = particle.rad
+        particle.u[1] = -particle.u[1]
+    
+    if particle.r[1] > (box_shape[1] - particle.rad):
+        # separticlelf.r[1] = box_shape[1] - particle.rad
+        particle.u[1] = -particle.u[1]
 
 
 # Collide two particles in 1/2D, using ZMF to calculate new velocities
@@ -107,12 +120,12 @@ def particle_collide(p1, p2):
     
     # Calculuate ZMF velocity
     # Must be np arrays to perform correct operations
-    vzm = np.add((p1.v*p1.mass), (p2.v*p2.mass))
+    vzm = np.add((p1.u * p1.mass), (p2.u * p2.mass))
     vzm /= p1.mass + p2.mass
     
     # Velocities in ZMF:
-    p1_v = np.subtract(p1.v, vzm)
-    p2_v = np.subtract(p2.v, vzm)
+    p1_v = np.subtract(p1.u, vzm)
+    p2_v = np.subtract(p2.u, vzm)
     
     # Normalised vector connecting centres of particles
     direction = np.subtract(p1.r, p2.r) 
@@ -126,8 +139,8 @@ def particle_collide(p1, p2):
     p2_v = direction_norm * (-u_2)
     
     # Update velocities in lab frame
-    p1.v = p1_v + vzm
-    p2.v = p2_v + vzm
+    p1.u = p1_v + vzm
+    p2.u = p2_v + vzm
 
 
 # Check which particles are colliding and call collide function where relevant
@@ -141,19 +154,21 @@ def check_collision(particles, box_shape, N):
 
 # Function for animation to update each frame
 def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1,
-                verbose):
+                verbose, grav, g):
     
     circles = []    
     
     for i in range(N):
         circles.append(particles[i].plot_circle(ax))
-    
+
+
     check_collision(particles, box_shape, N)
     
     for i in range(N):
-        particles[i].update_state(dt, box_shape)
-        force_particle(particles[i], dt)
-
+        wall_collide(particles[i], box_shape)
+        force_particle(particles[i], dt, grav, g)
+        particles[i].update_state(dt)
+        
     
     if verbose:
         frame_update = np.linspace(1, update_freq-1, update_freq-1)
@@ -170,7 +185,8 @@ def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1,
 
 
 # Set up axes for animation, creates animation and saves
-def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose):
+def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose,
+                grav, g):
     
     fig, ax = plt.subplots()
     ax.set_xlim(0, box_shape[0])
@@ -189,9 +205,9 @@ def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose):
     
     anim = FuncAnimation(fig, update_anim, frames=steps, interval=2, blit=True,
                          fargs=(particles, box_shape, ax, N, dt, update_freq,
-                                steps, t1, verbose))
+                                steps, t1, verbose, grav, g))
     
-    anim.save('particles_grav.gif', writer='pillow', fps=60)
+    anim.save('particles_grav_2.gif', writer='pillow', fps=60)
 
 
 #Plot particles as circles
@@ -375,11 +391,11 @@ def create_particle(box_shape, min_vel, max_vel, min_mass, max_mass, min_rad,
             print("Warning: particle is too large for box")
         r = np.append(r, np.random.uniform(rad, box_shape[i] - rad))
     
-    v = np.random.uniform(min_vel, max_vel, D)
+    u = np.random.uniform(min_vel, max_vel, D)
     
     charge = 0
     
-    return Particle(r, v, mass, rad, charge, colour)
+    return Particle(r, u, mass, rad, charge, colour)
 
 
 # Create list of particles. 
@@ -416,8 +432,8 @@ def create_particles_list(N, box_shape, min_vel, max_vel, min_mass, max_mass,
 # Add forces e.g. grav, force from B field (via charge)
 def main():
     
-    N = 1 # Number of particles. Default = 6
-    steps = 36 # Number of time steps. Default = 600
+    N = 3 # Number of particles. Default = 6
+    steps = 360 # Number of time steps. Default = 600
     dt = 1/120 # Size of time step.  Default = 1/120
     box_shape = [1, 1] # Size of box. Default = [1,1]
     
@@ -425,19 +441,22 @@ def main():
     g = 9.81
     
     min_vel = 0.0 #  # Default = -0.5. Maximum magnitude of vx and vy
-    max_vel = 0.0  # Default = 0.5
+    max_vel = 1.0  # Default = 0.5
     
     min_rad = 0.02 # Default = 0.02
     max_rad = 0.1 # Default = 0.1
     
     min_mass = 1.0 # Default = 1.0
-    max_mass = 10.0 # Default = 10.0
+    max_mass = 1.0 # Default = 10.0
     
     verbose = True
     update_freq = 5
     
     particles = create_particles_list(N, box_shape, min_vel, max_vel,
-                                      min_mass, max_mass, min_rad, max_rad)
+                                      min_mass, max_mass, min_rad, max_rad)    
+    
+    print(particles[0].r, particles[0].u)
+    print(particles[0].KE(), particles[0].GPE(g))
     
     N = len(particles)
     
@@ -451,7 +470,12 @@ def main():
     t1 = time.time()
     
     # Create animation of simulation
-    create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose)
+    create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose,
+                grav, g)
+    
+        
+    print(particles[0].r, particles[0].u)
+    print(particles[0].KE(), particles[0].GPE(g))
     
     if verbose:
         t2 = time.time()
