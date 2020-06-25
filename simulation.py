@@ -6,7 +6,17 @@ Created on Wed May 13 22:49:50 2020
 @author: Elliott
 """
 
+
+# To do list:
+# Limits on inputs e.g. negative mass/radius?
+# Figure out defaults
+# Change how params passed?
+# Specify initial conditions?
+# Seperate simulation and gif making (via saving to txt file?)
+
+
 import numpy as np
+import pandas as pd
 from math import pi, sqrt
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -14,13 +24,13 @@ from matplotlib.patches import Circle
 from operator import attrgetter
 import time
 import datetime
+from scipy.constants import epsilon_0
 
-D = 2 # Number of dimensions
 
 class Particle:
     
-    def __init__(self, r=np.zeros(D), u=np.zeros(D), mass=1.0, rad=0.5,
-                 charge=0, colour='tab:blue', v=np.zeros(D), a=np.zeros(D)):
+    def __init__(self, r=np.zeros(3), u=np.zeros(3), mass=1.0, rad=0.5,
+                 charge=0, colour='tab:blue', v=np.zeros(3), a=np.zeros(3)):
         
         self.r = r # Position
         self.u = u # Velocity at start of time step
@@ -46,10 +56,22 @@ class Particle:
     # Gravitational potential energy
     def GPE(self, g):
         return self.mass * g * self.r[1]
+
+
+    def EPE(self, particles):
+        
+        ke =  1 / ( 4 * pi * epsilon_0)
+        E = 0
     
-    # Area of particle
-    def area(self):
-        return pi * self.rad**2
+        for i in range(len(particles)):
+            
+            direction = np.subtract(self.r, particles[i].r) 
+            direction_mag = np.linalg.norm(direction)    
+            
+            E += ke * self.charge * particles[i].charge / direction_mag
+        
+        return E
+    
     
     # Check if a particle overlaps with a list of particles
     # Returns True if particle overlaps with any other in list, else False
@@ -81,19 +103,43 @@ class Particle:
 
 
 # F = dP/dt => dv = F dt / m
-def force_particle(particle, dt, grav, g):
+def force_particle(particle, particles, D, dt, grav, g, B_field, B, q_int, N):
+    
+    F =  np.zeros(3)
     
     if grav:
-        F = np.array([0, -g  * particle.mass])
-    else:
-        F =  np.zeros(D)
+        F[D-1] += -g  * particle.mass
     
+    if B_field:
+        F += particle.charge * np.cross(particle.u, B)
+    
+    if q_int:
+       
+       ke =  1 / ( 4 * pi * epsilon_0)
+       
+       for i in range(N-1):
+           
+           direction = np.subtract(particle.r, particles[i].r) 
+           direction_mag = np.linalg.norm(direction)
+           direction_norm = direction / direction_mag
+           
+           r_sq = np.sum(np.square(direction))
+           F_mag = ke * particle.charge * particles[i].charge / r_sq
+           
+           F += direction_norm * F_mag
+    
+    
+    # print(F)
+    # print(particle.mass)
+        
     particle.a = np.divide(F, particle.mass)
     
     dv = np.multiply(particle.a, dt)
     
+    # print(dv)
+    
     particle.v = np.add(particle.u, dv)
-
+    
 
 # Collide particle with wall
 def wall_collide(particle, box_shape):
@@ -153,8 +199,8 @@ def check_collision(particles, box_shape, N):
 
 
 # Function for animation to update each frame
-def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1,
-                verbose, grav, g):
+def update_anim(frame, particles, D, box_shape, ax, N, dt, update_freq, steps,
+                t1, verbose, grav, g, B_field, B, q_int):
     
     circles = []    
     
@@ -163,10 +209,16 @@ def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1,
 
 
     check_collision(particles, box_shape, N)
+    # particle_interact(particles, N, dt, q_int)
     
     for i in range(N):
+        
         wall_collide(particles[i], box_shape)
-        force_particle(particles[i], dt, grav, g)
+        
+        other_particles = particles[:i] + particles[i+1:]
+        force_particle(particles[i], other_particles, D, dt, grav, g, B_field,
+                       B, q_int, N)
+        
         particles[i].update_state(dt)
         
     
@@ -185,8 +237,8 @@ def update_anim(frame, particles, box_shape, ax, N, dt, update_freq, steps, t1,
 
 
 # Set up axes for animation, creates animation and saves
-def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose,
-                grav, g):
+def create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
+                verbose, grav, g, B_field, B, q_int):
     
     fig, ax = plt.subplots()
     ax.set_xlim(0, box_shape[0])
@@ -204,10 +256,11 @@ def create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose,
     # plt.figure(dpi=10)
     
     anim = FuncAnimation(fig, update_anim, frames=steps, interval=2, blit=True,
-                         fargs=(particles, box_shape, ax, N, dt, update_freq,
-                                steps, t1, verbose, grav, g))
+                         fargs=(particles, D, box_shape, ax, N, dt,
+                                update_freq, steps, t1, verbose, grav, g,
+                                B_field, B, q_int))
     
-    anim.save('particles_grav_2.gif', writer='pillow', fps=60)
+    anim.save('particles_set.gif', writer='pillow', fps=30)
 
 
 #Plot particles as circles
@@ -236,25 +289,30 @@ def plot_box(particles, box_shape, N):
 
 
 # Find total KE in system
-def calc_E_tot(particles, N, grav, g):
+def calc_E_tot(particles, N, grav, g, q_int):
     
     KE = 0
-        
+    GPE = 0
+    EPE = 0
+    
     for i in range(N):
         KE += particles[i].KE()
         
     if grav:
-        
-        GPE = 0
         
         for i in range(N):
             GPE += particles[i].GPE(g)
         
         E_tot = KE + GPE
     
-    else:
+    if q_int:
         
-        E_tot = KE
+        for i in range(N):
+        
+            other_particles = particles[:i] + particles[i+1:]
+            EPE += particles[i].EPE(other_particles)
+        
+    E_tot = KE + GPE + EPE 
     
     return E_tot
 
@@ -279,9 +337,9 @@ def calc_extreme_val(particles, attr, minimum=True, index=None):
 
 
 # Find maximum possible velocity for single particle, if given all initial KE
-def calc_max_v(particles, N, grav, g):
+def calc_max_v(particles, N, grav, g, q_int):
     
-    max_KE = calc_E_tot(particles, N, grav, g)
+    max_KE = abs(calc_E_tot(particles, N, grav, g, q_int))    
     min_mass = calc_extreme_val(particles, 'mass', minimum=True)
     max_v = sqrt(2 * max_KE / min_mass)
     
@@ -289,23 +347,23 @@ def calc_max_v(particles, N, grav, g):
 
 
 # Check maximum possible distance a particle could travel in time step
-def calc_max_dist(particles, dt, N, grav, g):
+def calc_max_dist(particles, dt, N, grav, g, q_int):
     
-    v = calc_max_v(particles, N, grav, g)
+    v = calc_max_v(particles, N, grav, g, q_int)
     max_dist = v * dt
     
     return max_dist
 
 
-def calc_expt_av_dist(min_vel, max_vel, dt):
+def calc_expt_av_dist(vel_range, dt):
     
     # Approx
     # sample_num = 10000000
-    # a = np.random.uniform(min_vel, max_vel, sample_num)
-    # b = np.random.uniform(min_vel, max_vel, sample_num)
+    # a = np.random.uniform(vel_range[0], vel_range[1], sample_num)
+    # b = np.random.uniform(vel_range[0], vel_range[1], sample_num)
     # v_av = np.mean(np.sqrt(np.add(np.square(a), np.square(b))))
     
-    max_speed = abs(max([min_vel, max_vel], key=abs))
+    max_speed = abs(max([vel_range[0], vel_range[1]], key=abs))
     
     # Actual expression in 2D:
     v_av = max_speed * (sqrt(2) + np.arcsinh((1))) / 3
@@ -331,10 +389,10 @@ def calc_actual_av_dist(particles, dt, N):
 
 
 # Checks likelihood particles will pass through each other
-def speed_check(particles, dt, min_vel, max_vel, N, grav, g):
+def speed_check(particles, dt, vel_range, N, grav, g, q_int):
     
-    max_dist = calc_max_dist(particles, dt, N, grav, g)
-    expt_av_dist = calc_expt_av_dist(min_vel, max_vel, dt)
+    max_dist = calc_max_dist(particles, dt, N, grav, g, q_int)
+    expt_av_dist = calc_expt_av_dist(vel_range, dt)
     actual_av_dist = calc_actual_av_dist(particles, dt, N)
     
     rad = calc_extreme_val(particles, 'rad', minimum=True)
@@ -364,118 +422,207 @@ def speed_check(particles, dt, min_vel, max_vel, N, grav, g):
     print(f'Smallest particle radius: {rad:.2f}')
 
 
-# Creates single particle, currently with random position and velocity
-# Need to change position so can't be partially outside of box
-# Also consider limits on size/velocity
-# Limits may be implemented via @property i.e. not here?
-def create_particle(box_shape, min_vel, max_vel, min_mass, max_mass, min_rad,
-                    max_rad):
+# Creates single particle
+# Defines mass, radius, position, velocity, charge and colour from ranges given
+# Colour based on masses (all same or darker if heavier)
+def create_rand_particle(D, box_shape, vel_range, mass_range, rad_range,
+                         q_range, e):
     
-    if min_mass==max_mass :
-        mass = min_mass
+    # Mass of particle and colour (if variable masses, darker when heavier)
+    if (mass_range[0]==mass_range[1]):
+        mass = mass_range[0]
         colour = 'tab:blue'
     else:
-        mass = np.random.uniform(min_mass, max_mass)
-        colour = (0,0, 1-(mass/max_mass))
+        mass = np.random.uniform(mass_range[0], mass_range[1])
+        colour = (0,0, 1-(mass/mass_range[1]))
         
-    if min_rad==max_rad:
-        rad = min_rad
+    # Radius of particle
+    if (rad_range[0]==rad_range[1]):
+        rad = rad_range[0]
     else:
-        rad = np.random.uniform(min_rad, max_rad)
-    
+        rad = np.random.uniform(rad_range[0], rad_range[1])
+   
+    # Position of particle
     r = np.array(())
     
+    #Position within box
     for i in range(D):
         
         if (box_shape[i] - 2*rad < 0):
             print("Warning: particle is too large for box")
         r = np.append(r, np.random.uniform(rad, box_shape[i] - rad))
     
-    u = np.random.uniform(min_vel, max_vel, D)
+    # Position in dimensions not defined by box e.g. z coordinate for 2D box
+    for i in range(D, 3):
+        r = np.append(r, np.array(box_shape[i]/2))
     
-    charge = 0
+    # Velocity of particle
+    u = np.random.uniform(vel_range[0], vel_range[1], D)
+    u = np.append(u, np.zeros(3-D))
+    
+    # Charge of particle
+    if (q_range[0]==q_range[1]):
+        charge = q_range[0] * e
+    elif np.random.random() < 0.5:
+        charge = q_range[0] * e
+    else:
+        charge = q_range[1] * e
+    
+    # Random half int:
+    # charge = round(np.random.uniform(q_range[0], q_range[1]) * 2) * e / 2
+    
+    return Particle(r, u, mass, rad, charge, colour)
+
+
+# Creates single particle from hard-coded values
+# Sets mass, radius, position, velocity, charge and colour using dataframe
+# Colour based on masses (all same or darker if heavier)
+def create_set_particle(D, df, i, e):
+    
+    mass = df.iloc[i]['mass']
+    
+    if (df['mass'].max() == df['mass'].min()):
+        colour = 'tab:blue'
+    else:
+        colour = (0,0, 1-(mass/df['mass'].max()))
+    
+    rad = df.iloc[i]['rad']
+
+    r = df.iloc[i]['r']
+    
+    u = df.iloc[i]['u']
+
+    charge = df.iloc[i]['charge'] * e
     
     return Particle(r, u, mass, rad, charge, colour)
 
 
 # Create list of particles. 
 # Currently position and velocity random. Particles are checked to not overlap
-def create_particles_list(N, box_shape, min_vel, max_vel, min_mass, max_mass,
-                          min_rad, max_rad):
+def create_particles_list(D, N, box_shape, vel_range, mass_range, rad_range,
+                          q_range, e, rand_init, particle_df):
     
     particles = []
     
     for i in range(N):
         
-        particle = create_particle(box_shape, min_vel, max_vel, 
-                                   min_mass, max_mass, min_rad, max_rad)
-        count = 0
-        
-        while particle.check_overlap(particles):
-            particle = create_particle(box_shape, min_vel, max_vel,
-                                       min_mass, max_mass, min_rad, max_rad)
-            count += 1
+        if (rand_init):
             
-            if (count == 10):
-                print("Unable to place new particle. Consider decreasing N "
+            particle = create_rand_particle(D, box_shape, vel_range,
+                                            mass_range, rad_range, q_range, e)
+            
+            count = 0
+            
+            while particle.check_overlap(particles):
+            
+                particle = create_rand_particle(D, box_shape, vel_range,
+                                                mass_range, rad_range, q_range,
+                                                e)
+                count += 1
+            
+                if (count == 10):
+                    print("Unable to place new particle. Consider decreasing N "
                       "or increasing box size")
-                break
+                    break
         
-        if count < 10:
+            if count < 10:
+                particles.append(particle)
+            
+        else:
+            particle = create_set_particle(D, particle_df, i, e)
             particles.append(particle)
+        
+        
+        particle_df.loc[i] = [particle.r, particle.u, particle.mass, 
+                                particle.rad, particle.charge, particle.colour]
+        
+    particle_df.to_hdf('init_values.hdf', 'df')
     
     return particles
 
-# To do list:
-# Limits on inputs e.g. negative mass/radius?
-# Figure out defaults
-# Add forces e.g. grav, force from B field (via charge)
+
 def main():
     
     N = 3 # Number of particles. Default = 6
-    steps = 360 # Number of time steps. Default = 600
-    dt = 1/120 # Size of time step.  Default = 1/120
-    box_shape = [1, 1] # Size of box. Default = [1,1]
+    steps = 120 # Number of time steps. Default = 600
+    dt = 1/100 # Size of time step.  Default = 1/300
+    box_shape = [1, 1, 1] # Size of box. Default = [1,1, 1]
+    D = 2 # Number of dimensions. Default = 2 (works for 1, should work for 3?)
     
-    grav = True
+    grav = False
     g = 9.81
     
-    min_vel = 0.0 #  # Default = -0.5. Maximum magnitude of vx and vy
-    max_vel = 1.0  # Default = 0.5
+    B_field = False
+    B = np.array([0, 0, 1e-7])
     
-    min_rad = 0.02 # Default = 0.02
-    max_rad = 0.1 # Default = 0.1
+    q_int = False
+    e = 1.60e-19
+
+    rand_init = False
     
-    min_mass = 1.0 # Default = 1.0
-    max_mass = 1.0 # Default = 10.0
+    particle_df = pd.DataFrame(columns=['r', 'u', 'mass', 'rad', 'charge',
+                                        'colour'])
+    
+    if (not rand_init):
+        
+        r = [np.array([0.1, 0.2, 0.5]),
+             np.array([0.7, 0.3, 0.5]),
+             np.array([0.7, 0.4, 0.5])]
+        
+        u = [np.array([1.0, 1.0, 0.0]),
+             np.array([1.0, -1.0, 0.0]),
+             np.array([-0.5, 0.5, 0.0])]
+        
+        mass = [3.0, 2.0, 1.0]
+        
+        rad = [0.02, 0.05, 0.1]
+        
+        charge = [0.0, 0.0, 0.0]
+        
+        colour = [None, None, None]
+        
+        particle_df.loc[0] = r[0], u[0], mass[0], rad[0], charge[0], colour[0]
+        particle_df.loc[1] = r[1], u[1], mass[1], rad[1], charge[1], colour[1]
+        particle_df.loc[2] = r[2], u[2], mass[2], rad[2], charge[2], colour[2]
+
+
+    # Min and max values for velocity in each direction:
+    vel_range = [-1.0, 1.0] # Default = [-2.0, 2.0]
+    
+    # Min and max values for range
+    mass_range = [1.0, 10.0] # Default = [1.0, 10.0]
+    
+    # Min and max values for radius    
+    rad_range = [0.02, 0.1] # Default = [0.02, 0.1]
+
+    # Min and max values for charge
+    q_range = [-1, 1] # Default = [-1, 1] 
     
     verbose = True
     update_freq = 5
     
-    particles = create_particles_list(N, box_shape, min_vel, max_vel,
-                                      min_mass, max_mass, min_rad, max_rad)    
-    
-    print(particles[0].r, particles[0].u)
-    print(particles[0].KE(), particles[0].GPE(g))
+    particles = create_particles_list(D, N, box_shape, vel_range, mass_range,
+                                      rad_range, q_range, e, rand_init,
+                                      particle_df)    
     
     N = len(particles)
     
     if verbose:
         # Check likelihood of particles passing through each other
-        speed_check(particles, dt, min_vel, max_vel, N, grav, g)
+        speed_check(particles, dt, vel_range, N, grav, g, q_int)
         
         # Check initial KE so can track and confirm conservation
-        initial_E = calc_E_tot(particles, N, grav, g)
+        initial_E = calc_E_tot(particles, N, grav, g, q_int)
     
     t1 = time.time()
     
     # Create animation of simulation
-    create_anim(particles, box_shape, N, steps, dt, update_freq, t1, verbose,
-                grav, g)
+    create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
+                verbose, grav, g, B_field, B, q_int)
     
         
-    print(particles[0].r, particles[0].u)
-    print(particles[0].KE(), particles[0].GPE(g))
+    # print(particles[0].r, particles[0].u)
+    # print(particles[0].KE(), particles[0].GPE(g))
     
     if verbose:
         t2 = time.time()
@@ -486,7 +633,7 @@ def main():
         else:
             print(f'Time taken for simulation: {total_t:.2f}s')
         
-        final_E = calc_E_tot(particles, N, grav, g)
+        final_E = calc_E_tot(particles, N, grav, g, q_int)
         E_change = final_E - initial_E
         E_percent_change = (100 * E_change) / initial_E
         E_txt = (f'The energy change was {E_change:.2e} '
