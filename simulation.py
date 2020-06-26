@@ -199,17 +199,10 @@ def check_collision(particles, box_shape, N):
 
 
 # Function for animation to update each frame
-def update_anim(frame, particles, D, box_shape, ax, N, dt, update_freq, steps,
+def update_particles(frame, particles, D, box_shape, N, dt, update_freq, steps,
                 t1, verbose, grav, g, B_field, B, q_int):
     
-    circles = []    
-    
-    for i in range(N):
-        circles.append(particles[i].plot_circle(ax))
-
-
     check_collision(particles, box_shape, N)
-    # particle_interact(particles, N, dt, q_int)
     
     for i in range(N):
         
@@ -232,13 +225,94 @@ def update_anim(frame, particles, D, box_shape, ax, N, dt, update_freq, steps,
             long_time = str(datetime.timedelta(seconds=total_t))
             print(f'Simulation progress: {(100 * frame/steps):.1f}%. '
                   f'Current time taken for simulation: {long_time}')
+
+
+def run_sim(particles, D, box_shape, N, dt, update_freq, steps, t1, verbose,
+            grav, g, B_field, B, q_int):
         
+    x = np.arange(0, N)
+    r_lst = ["r" + num for num in x.astype(str)]
+    u_lst = ["u" + num for num in x.astype(str)]
+    
+    columns = [None]*(N*2) 
+    columns[::2] = r_lst
+    columns[1::2] = u_lst    
+    
+    sim_df = pd.DataFrame(columns=columns, index=list(range(0, steps+1)))
+    
+    for i in range(N):
+        r_name = 'r' + str(i)
+        u_name = 'u' + str(i)
+        sim_df.iloc[0][r_name] = [particles[i].r.copy()]
+        sim_df.iloc[0][u_name] = [particles[i].u.copy()]
+                
+    for i in range(steps):
+        
+        update_particles(i, particles, D, box_shape, N, dt, update_freq, steps,
+                         t1, verbose, grav, g, B_field, B, q_int)
+        
+        for j in range(N):
+            r_name = 'r' + str(j)
+            u_name = 'u' + str(j)
+            sim_df.iloc[i+1][r_name] = [particles[j].r.copy()]
+            sim_df.iloc[i+1][u_name] = [particles[j].u.copy()]
+        
+    sim_df.to_pickle('sim_df.pkl')
+
+
+# Function for animation to update each frame
+def update_anim(frame, sim_df, particles, D, box_shape, ax, N, dt, update_freq,
+                steps, t1, verbose, save_sim, grav, g, B_field, B, q_int):
+    
+    circles = []
+    
+    if (frame==0):
+        
+        for i in range(N):
+            circles.append(particles[i].plot_circle(ax))
+        
+    else:
+    
+        check_collision(particles, box_shape, N)
+        
+        for i in range(N):
+            
+            wall_collide(particles[i], box_shape)
+            
+            other_particles = particles[:i] + particles[i+1:]
+            force_particle(particles[i], other_particles, D, dt, grav, g, B_field,
+                           B, q_int, N)
+            
+            particles[i].update_state(dt)
+        
+        if verbose:
+            frame_update = np.linspace(1, update_freq-1, update_freq-1)
+            frame_update *= steps//update_freq
+            
+            if frame in frame_update:
+                t2 = time.time()
+                total_t = t2 - t1
+                long_time = str(datetime.timedelta(seconds=total_t))
+                print(f'Simulation progress: {(100 * frame/steps):.1f}%. '
+                      f'Current time taken for simulation: {long_time}')
+        
+                
+        for i in range(N):
+           
+            if (save_sim):
+                r_name = 'r' + str(i)
+                u_name = 'u' + str(i)
+                sim_df.iloc[frame][r_name] = [particles[i].r.copy()]
+                sim_df.iloc[frame][u_name] = [particles[i].u.copy()]        
+            
+            circles.append(particles[i].plot_circle(ax))
+                                
     return circles
 
 
 # Set up axes for animation, creates animation and saves
 def create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
-                verbose, grav, g, B_field, B, q_int):
+                verbose, save_sim, grav, g, B_field, B, q_int):
     
     fig, ax = plt.subplots()
     ax.set_xlim(0, box_shape[0])
@@ -252,15 +326,38 @@ def create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
     left=False,
     labelbottom=False,
     labelleft=False)
-
-    # plt.figure(dpi=10)
     
-    anim = FuncAnimation(fig, update_anim, frames=steps, interval=2, blit=True,
-                         fargs=(particles, D, box_shape, ax, N, dt,
-                                update_freq, steps, t1, verbose, grav, g,
-                                B_field, B, q_int))
+    if (save_sim):
+        
+        x = np.arange(0, N)
+        r_lst = ["r" + num for num in x.astype(str)]
+        u_lst = ["u" + num for num in x.astype(str)]
+    
+        columns = [None]*(N*2) 
+        columns[::2] = r_lst
+        columns[1::2] = u_lst    
+        
+        sim_df = pd.DataFrame(columns=columns, index=list(range(0, steps+1)))
+
+        for i in range(N):
+            r_name = 'r' + str(i)
+            u_name = 'u' + str(i)
+            sim_df.iloc[0][r_name] = [particles[i].r.copy()]
+            sim_df.iloc[0][u_name] = [particles[i].u.copy()]
+            
+    else:
+        sim_df = pd.DataFrame()
+    
+    anim = FuncAnimation(fig, update_anim, frames=(steps+1), interval=2,
+                         blit=True,
+                         fargs=(sim_df, particles, D, box_shape, ax, N, dt,
+                                update_freq, steps, t1, verbose, save_sim,
+                                grav, g, B_field, B, q_int))
     
     anim.save('particles_set.gif', writer='pillow', fps=30)
+    
+    if (save_sim):
+        sim_df.to_pickle('sim_df.pkl')
 
 
 #Plot particles as circles
@@ -500,7 +597,7 @@ def create_set_particle(D, df, i, e):
 # Create list of particles. 
 # Currently position and velocity random. Particles are checked to not overlap
 def create_particles_list(D, N, box_shape, vel_range, mass_range, rad_range,
-                          q_range, e, rand_init, particle_df):
+                          q_range, e, rand_init, read_init, particle_df):
     
     particles = []
     
@@ -532,11 +629,12 @@ def create_particles_list(D, N, box_shape, vel_range, mass_range, rad_range,
             particle = create_set_particle(D, particle_df, i, e)
             particles.append(particle)
         
-        
-        particle_df.loc[i] = [particle.r, particle.u, particle.mass, 
+        if (not read_init):
+            particle_df.loc[i] = [particle.r, particle.u, particle.mass, 
                                 particle.rad, particle.charge, particle.colour]
-        
-    particle_df.to_hdf('init_values.hdf', 'df')
+    
+    if (not read_init):    
+        particle_df.to_pickle('init_values.pkl')
     
     return particles
 
@@ -549,6 +647,11 @@ def main():
     box_shape = [1, 1, 1] # Size of box. Default = [1,1, 1]
     D = 2 # Number of dimensions. Default = 2 (works for 1, should work for 3?)
     
+    anim = True
+    save_sim = True
+    rand_init = False
+    read_init = False
+    
     grav = False
     g = 9.81
     
@@ -557,16 +660,19 @@ def main():
     
     q_int = False
     e = 1.60e-19
-
-    rand_init = False
     
-    particle_df = pd.DataFrame(columns=['r', 'u', 'mass', 'rad', 'charge',
+    if (read_init and not rand_init):
+        print("Using initial conditions saved")
+        particle_df = pd.read_pickle('init_values.pkl')
+    else:
+        particle_df = pd.DataFrame(columns=['r', 'u', 'mass', 'rad', 'charge',
                                         'colour'])
     
-    if (not rand_init):
-        
+    if (not read_init and not rand_init):
+         
+        print("Using initial conditions specified")
         r = [np.array([0.1, 0.2, 0.5]),
-             np.array([0.7, 0.3, 0.5]),
+             np.array([0.6, 0.8, 0.5]),
              np.array([0.7, 0.4, 0.5])]
         
         u = [np.array([1.0, 1.0, 0.0]),
@@ -603,7 +709,7 @@ def main():
     
     particles = create_particles_list(D, N, box_shape, vel_range, mass_range,
                                       rad_range, q_range, e, rand_init,
-                                      particle_df)    
+                                      read_init, particle_df)    
     
     N = len(particles)
     
@@ -617,9 +723,14 @@ def main():
     t1 = time.time()
     
     # Create animation of simulation
-    create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
+    if (anim):
+        create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
+                verbose, save_sim, grav, g, B_field, B, q_int)
+    elif (save_sim):
+        run_sim(particles, D, box_shape, N, dt, update_freq, steps, t1, 
                 verbose, grav, g, B_field, B, q_int)
-    
+    else:
+        print("Please choose to create animation and/or save simulation data")
         
     # print(particles[0].r, particles[0].u)
     # print(particles[0].KE(), particles[0].GPE(g))
