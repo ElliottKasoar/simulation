@@ -14,6 +14,7 @@ from matplotlib.patches import Circle
 import time
 import datetime
 
+
 #Plot single frame
 def plot_box(init_values, data, box_shape, N):
     
@@ -56,7 +57,8 @@ def draw_circle(ax, r, rad, colour):
     return circle
     
 
-def update_anim(frame, init_values, data, N, ax):
+def update_anim(frame, init_values, data, N, ax, t1, verbose, update_freq,
+                frames):
    
     ax.clear()
 
@@ -69,7 +71,7 @@ def update_anim(frame, init_values, data, N, ax):
         
         pos_str = 'r' + str(i)
         
-        r = data.iloc[frame][pos_str][0]
+        r = data.iloc[frame][pos_str]
         
         circle = Circle(xy=r, radius=rad, color=colour)
         ax.add_patch(circle)        
@@ -77,17 +79,22 @@ def update_anim(frame, init_values, data, N, ax):
 
         # circles.append(draw_circle(ax, r, rad, colour))
         
+        
+    if verbose:
+        frame_update = np.linspace(1, update_freq-1, update_freq-1)
+        frame_update *= frames//update_freq
+        
+        if frame in frame_update:
+            t2 = time.time()
+            total_t = t2 - t1
+            long_time = str(datetime.timedelta(seconds=total_t))
+            print(f'Animation progress: {(100 * frame/frames):.1f}%. '
+                  f'Current time taken for simulation: {long_time}')
+        
     return circles
 
 
-    # def plot_circle(self, ax):
-    #     circle = Circle(xy=self.r, radius=self.rad, color=self.colour)
-    #     # print(self.colour)
-    #     ax.add_patch(circle)
-    #     return circle
-
-
-def animate(init_values, data, box_shape, frames, N):
+def animate(init_values, data, box_shape, frames, N, t1, verbose, update_freq):
     
     fig, ax = plt.subplots()
     ax.set_xlim(0, box_shape[0])
@@ -103,29 +110,39 @@ def animate(init_values, data, box_shape, frames, N):
     labelleft=False)
     
     anim = FuncAnimation(fig, update_anim, frames=frames, interval=2,
-                         blit=True, fargs=(init_values, data, N, ax))
+                         blit=True, fargs=(init_values, data, N, ax, t1,
+                                           verbose, update_freq, frames))
     
-    anim.save('particles_read.gif', writer='pillow', fps=30)
+    anim.save('particles_read.gif', writer='pillow', fps=60)
 
     
 def main():
     
     init_values = pd.read_pickle('init_values.pkl')
-    data = pd.read_pickle('sim_df.pkl')
-    box_shape = [1, 1, 1]
+    data = pd.read_pickle('sim_values.pkl')
+    const_df = pd.read_pickle('consts.pkl')
     
-    frames = len(data)
-    N = len(init_values)
+    box_shape = const_df['box_shape'][0]
+    steps = const_df['steps'][0]
+    frames = steps + 1
+    N = const_df['N'][0]
     
+    verbose = True
+    update_freq = 5 # Number of progress updates e.g. every 20% for 5 
+
     t1 = time.time()
-    animate(init_values, data, box_shape, frames, N)
+    
+    animate(init_values, data, box_shape, frames, N, t1, verbose, update_freq)
+    
     t2 = time.time()
     total_t = t2 - t1
-    if total_t > 60:
-        long_time = str(datetime.timedelta(seconds=total_t))
-        print(f'Time taken for simulation: {long_time}')
-    else:
-        print(f'Time taken for simulation: {total_t:.2f}s')
+    
+    if verbose:
+        if total_t > 60:
+            long_time = str(datetime.timedelta(seconds=total_t))
+            print(f'Time taken for simulation: {long_time}')
+        else:
+            print(f'Time taken for simulation: {total_t:.2f}s')
         
 
 if __name__ == '__main__':

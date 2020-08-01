@@ -229,7 +229,7 @@ def update_particles(frame, particles, D, box_shape, N, dt, update_freq, steps,
 
 def run_sim(particles, D, box_shape, N, dt, update_freq, steps, t1, verbose,
             grav, g, B_field, B, q_int):
-        
+    
     x = np.arange(0, N)
     r_lst = ["r" + num for num in x.astype(str)]
     u_lst = ["u" + num for num in x.astype(str)]
@@ -243,8 +243,8 @@ def run_sim(particles, D, box_shape, N, dt, update_freq, steps, t1, verbose,
     for i in range(N):
         r_name = 'r' + str(i)
         u_name = 'u' + str(i)
-        sim_df.iloc[0][r_name] = [particles[i].r.copy()]
-        sim_df.iloc[0][u_name] = [particles[i].u.copy()]
+        sim_df.iloc[0][r_name] = particles[i].r.copy()
+        sim_df.iloc[0][u_name] = particles[i].u.copy()
                 
     for i in range(steps):
         
@@ -254,10 +254,11 @@ def run_sim(particles, D, box_shape, N, dt, update_freq, steps, t1, verbose,
         for j in range(N):
             r_name = 'r' + str(j)
             u_name = 'u' + str(j)
-            sim_df.iloc[i+1][r_name] = [particles[j].r.copy()]
-            sim_df.iloc[i+1][u_name] = [particles[j].u.copy()]
-        
-    sim_df.to_pickle('sim_df.pkl')
+            sim_df.iloc[i+1][r_name] = particles[j].r.copy()
+            sim_df.iloc[i+1][u_name] = particles[j].u.copy()
+    
+    
+    sim_df.to_pickle('sim_values.pkl')
 
 
 # Function for animation to update each frame
@@ -302,8 +303,8 @@ def update_anim(frame, sim_df, particles, D, box_shape, ax, N, dt, update_freq,
             if (save_sim):
                 r_name = 'r' + str(i)
                 u_name = 'u' + str(i)
-                sim_df.iloc[frame][r_name] = [particles[i].r.copy()]
-                sim_df.iloc[frame][u_name] = [particles[i].u.copy()]        
+                sim_df.iloc[frame][r_name] = particles[i].r.copy()
+                sim_df.iloc[frame][u_name] = particles[i].u.copy()   
             
             circles.append(particles[i].plot_circle(ax))
                                 
@@ -342,8 +343,8 @@ def create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
         for i in range(N):
             r_name = 'r' + str(i)
             u_name = 'u' + str(i)
-            sim_df.iloc[0][r_name] = [particles[i].r.copy()]
-            sim_df.iloc[0][u_name] = [particles[i].u.copy()]
+            sim_df.iloc[0][r_name] = particles[i].r.copy()
+            sim_df.iloc[0][u_name] = particles[i].u.copy()
             
     else:
         sim_df = pd.DataFrame()
@@ -357,7 +358,7 @@ def create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
     anim.save('particles_set.gif', writer='pillow', fps=30)
     
     if (save_sim):
-        sim_df.to_pickle('sim_df.pkl')
+        sim_df.to_pickle('sim_values.pkl')
 
 
 #Plot particles as circles
@@ -641,16 +642,19 @@ def create_particles_list(D, N, box_shape, vel_range, mass_range, rad_range,
 
 def main():
     
-    N = 3 # Number of particles. Default = 6
-    steps = 120 # Number of time steps. Default = 600
-    dt = 1/100 # Size of time step.  Default = 1/300
+    N = 6 # Number of particles. Default = 6
+    steps = 6000 - 1 # Number of time steps. Default = 599 (includes frame 0)
+    dt = 1/300 # Size of time step.  Default = 1/300
     box_shape = [1, 1, 1] # Size of box. Default = [1,1, 1]
     D = 2 # Number of dimensions. Default = 2 (works for 1, should work for 3?)
     
-    anim = True
+    anim = False
     save_sim = True
-    rand_init = False
+    rand_init = True
     read_init = False
+    
+    verbose = True
+    update_freq = 5 # Number of progress updates e.g. every 20% for 5
     
     grav = False
     g = 9.81
@@ -661,6 +665,26 @@ def main():
     q_int = False
     e = 1.60e-19
     
+    # Min and max values for velocity in each direction:
+    vel_range = [-1.0, 1.0] # Default = [-2.0, 2.0]
+    
+    # Min and max values for range
+    mass_range = [1.0, 1.0] # Default = [1.0, 10.0]
+    
+    # Min and max values for radius    
+    rad_range = [0.1, 0.1] # Default = [0.02, 0.1]
+
+    # Min and max values for charge
+    q_range = [-1, 1] # Default = [-1, 1] 
+    
+    const_df = pd.DataFrame(columns=['N', 'steps', 'dt', 'box_shape', 'D',
+                                        'grav', 'g', 'B_field', 'B', 'q_int',
+                                        'e'])
+    
+    const_df.loc[0] = N, steps, dt, box_shape, D, grav, g, B_field, B, q_int, e
+    const_df.to_pickle('consts.pkl')
+    
+    # Read or create dataframe to save inital conditions
     if (read_init and not rand_init):
         print("Using initial conditions saved")
         particle_df = pd.read_pickle('init_values.pkl')
@@ -668,6 +692,8 @@ def main():
         particle_df = pd.DataFrame(columns=['r', 'u', 'mass', 'rad', 'charge',
                                         'colour'])
     
+    
+    # Define inital conditions if not reading from file or generating randomly
     if (not read_init and not rand_init):
          
         print("Using initial conditions specified")
@@ -691,21 +717,6 @@ def main():
         particle_df.loc[1] = r[1], u[1], mass[1], rad[1], charge[1], colour[1]
         particle_df.loc[2] = r[2], u[2], mass[2], rad[2], charge[2], colour[2]
 
-
-    # Min and max values for velocity in each direction:
-    vel_range = [-1.0, 1.0] # Default = [-2.0, 2.0]
-    
-    # Min and max values for range
-    mass_range = [1.0, 10.0] # Default = [1.0, 10.0]
-    
-    # Min and max values for radius    
-    rad_range = [0.02, 0.1] # Default = [0.02, 0.1]
-
-    # Min and max values for charge
-    q_range = [-1, 1] # Default = [-1, 1] 
-    
-    verbose = True
-    update_freq = 5
     
     particles = create_particles_list(D, N, box_shape, vel_range, mass_range,
                                       rad_range, q_range, e, rand_init,
