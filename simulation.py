@@ -238,7 +238,7 @@ def run_sim(particles, D, box_shape, N, dt, update_freq, steps, t1, verbose,
     columns[::2] = r_lst
     columns[1::2] = u_lst    
     
-    sim_df = pd.DataFrame(columns=columns, index=list(range(0, steps+1)))
+    sim_df = pd.DataFrame(columns=columns, index=list(range(steps+1)))
     
     for i in range(N):
         r_name = 'r' + str(i)
@@ -338,7 +338,7 @@ def create_anim(particles, D, box_shape, N, steps, dt, update_freq, t1,
         columns[::2] = r_lst
         columns[1::2] = u_lst    
         
-        sim_df = pd.DataFrame(columns=columns, index=list(range(0, steps+1)))
+        sim_df = pd.DataFrame(columns=columns, index=list(range(steps+1)))
 
         for i in range(N):
             r_name = 'r' + str(i)
