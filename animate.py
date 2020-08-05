@@ -137,8 +137,8 @@ def main():
     
     verbose = True
     update_freq = 5 # Number of progress updates e.g. every 20% for 5 
-    network = False # Use data from network (alternatively original simulation)
-    frame_lims = [None, None] # Crop animation frames (use None for start/end)
+    network = True # Use data from network (alternatively original simulation)
+    frame_lims = [None, 600] # Crop animation frames (use None for start/end)
 
     init_values = pd.read_pickle('init_values.pkl')
     const_df = pd.read_pickle('consts.pkl')

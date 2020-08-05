@@ -642,8 +642,8 @@ def create_particles_list(D, N, box_shape, vel_range, mass_range, rad_range,
 
 def main():
     
-    N = 6 # Number of particles. Default = 6
-    steps = 6000 - 1 # Number of time steps. Default = 599 (includes frame 0)
+    N = 1 # Number of particles. Default = 6
+    steps = 60000 - 1 # Number of time steps. Default = 599 (includes frame 0)
     dt = 1/300 # Size of time step.  Default = 1/300
     box_shape = [1, 1, 1] # Size of box. Default = [1,1, 1]
     D = 2 # Number of dimensions. Default = 2 (works for 1, should work for 3?)
