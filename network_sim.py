@@ -231,7 +231,7 @@ def main():
     N = const_df['N'][0]
 
     # Network parameters
-    seq_length = 10
+    seq_length = 2
     input_dim = N*6
     output_dim = N*6
     input_nodes = 256
