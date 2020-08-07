@@ -12,6 +12,7 @@ import time
 import datetime
 from pickle import dump, load
 from sklearn.preprocessing import QuantileTransformer
+from sklearn.model_selection import train_test_split
 
 from keras.optimizers import Adam
 from keras.layers import Input, BatchNormalization, LSTM
@@ -94,7 +95,9 @@ def seq_data(data, seq_length, input_dim, output_dim):
 
 
 # Save data from numpy array as dataframe
-def save_data(data, frames, N):
+def save_data(data, N):
+    
+    frames = len(data)
     
     x = np.arange(0, N)
     r_lst = ["r" + num for num in x.astype(str)]
@@ -123,6 +126,33 @@ def save_data(data, frames, N):
     sim_df.to_pickle('network_values.pkl') 
 
 
+
+def process_data(sim_data, frames, N, seq_length, input_dim, output_dim,
+                 train_size, stateful, batch_size):
+    
+    print("Processing data...")
+    data, qt, scale = standardise_data(sim_data, frames, N, load_qt=False,
+                                       norm=True)
+
+    x, y = seq_data(data, seq_length, input_dim, output_dim)
+    x_train, x_test, y_train, y_test = train_test_split(x, y, shuffle=False,
+                                                        train_size=train_size)    
+    
+    if stateful:
+        crop_train = batch_size * (len(x_train) // batch_size)
+        crop_test = batch_size * (len(x_test) // batch_size)
+        
+        x_train = x_train[-crop_train:]
+        y_train = y_train[-crop_train:]
+        x_test = x_test[:crop_test]
+        y_test = y_test[:crop_test]
+    
+    print("Data processed")
+    
+    return x_train, x_test, y_train, y_test, qt, scale
+
+
+
 #Get (Adam) optimiser. Can replace Adam with others if required
 #Input: Learning rate, beta_1 and beta_2 for Adam optimiser 
 #Returns: Adam optimiser with parameters given
@@ -140,27 +170,59 @@ def get_loss_function():
 
 
 def build_network(optimizer, loss_func, seq_length, input_dim, output_dim, input_nodes,
-                  internal_nodes, internal_layers):
+                  internal_nodes, internal_layers, batch_size, stateful):
     
-    RNN_input = Input(shape=(seq_length, input_dim), name='RNN_input')
-    layer = LSTM(input_nodes, return_sequences=True)(RNN_input) #relu activation?
-    layer = Dropout(0.1)(layer)
-    layer = LSTM(input_nodes)(layer)
-    layer = Dropout(0.1)(layer)
+    if stateful:
+        RNN_input = Input(batch_shape=(batch_size, seq_length, input_dim))
+    else:
+        RNN_input = Input(shape=(seq_length, input_dim))
+    
+    layer = LSTM(input_nodes, return_sequences=True,
+                 stateful=stateful)(RNN_input)
+    layer = Dropout(0.3)(layer)
+    layer = LSTM(input_nodes//2)(layer)
+    layer = Dropout(0.3)(layer)
     
       #Internal layers
     for i in range(internal_layers):
         layer = Dense(internal_nodes)(layer)
-        layer = LeakyReLU(0.2)(layer)
-        layer = Dropout(0.1)(layer)
+        layer = LeakyReLU(0.3)(layer)
+        layer = Dropout(0.3)(layer)
     
-    RNN_output = Dense(output_dim, activation='sigmoid')(layer)
+    RNN_output = Dense(output_dim, activation='tanh')(layer)
     
     model = Model(inputs=RNN_input, outputs=RNN_output)
     
     model.compile(loss=loss_func, optimizer=optimizer)
     
     return model
+
+
+def network_test(model, x_test, qt, scale, N, seq_length, sim_frames):
+
+    print("Making predictions...")
+    
+    features = N * 6
+    y_pred = np.zeros((sim_frames, features))
+    seq = np.zeros((1, seq_length, features))
+    
+    init_seq_idx = np.random.randint(0, len(x_test))
+    seq[:] = x_test[init_seq_idx]
+    
+    for i in range(sim_frames):
+        
+        y_pred[i] = model.predict(seq)
+        seq = np.append(seq, y_pred[i]).reshape(1, seq_length+1, features)
+        seq = seq[:, 1:, :]
+        
+    # y_pred = model.predict(x_test)
+    
+    print("Predictions made")
+
+    print("Saving data...")
+    y_pred = destandardise_data(y_pred, qt, scale, norm=True)
+    save_data(y_pred, N)
+    print("Data saved")
 
 
 def main():
@@ -174,42 +236,46 @@ def main():
     N = const_df['N'][0]
 
     # Network parameters
-    seq_length = 100
+    seq_length = 10
     input_dim = N*6
     output_dim = N*6
-    input_nodes = 512
-    internal_nodes = 256
+    input_nodes = 256
+    internal_nodes = 128
     internal_layers = 2
+    stateful = False
 
     # Training parameters
-    batch_size = 128
-    epochs = 100
+    batch_size = 256
+    epochs = 3
+    train_size = 0.5
     
     # Adam optimiser parameters 
     lr = 0.0001
     b1 = 0.5
     b2 = 0.9
     
-    data, qt, scale = standardise_data(sim_data, frames, N, load_qt=False,
-                                       norm=True)
+    sim_frames = 1200
     
     print("Building network...")
     optimizer = get_optimizer(lr, b1, b2)
     loss_func = get_loss_function()
     model = build_network(optimizer, loss_func, seq_length, input_dim, 
                           output_dim, input_nodes, internal_nodes,
-                          internal_layers)
+                          internal_layers, batch_size, stateful)  
     print("Network built")
     
-    x, y = seq_data(data, seq_length, input_dim, output_dim)
     
-    # x0 = data[0]
-    # sim_data_0 = sim_data.iloc[0]
-   
-    print("Saving data...")
-    data = destandardise_data(data, qt, scale, norm=True)
-    save_data(data, frames, N)
-    print("Data saved")
+    x_train, x_test, y_train, y_test, qt, scale = process_data(sim_data, frames, N, seq_length, input_dim, output_dim,
+                 train_size, stateful, batch_size)
+    
+    print("Training network...")
+    model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs,
+              shuffle=not(stateful))
+    print("Network trained")
+    
+    model.save('RNN.h5')
+    
+    network_test(model, x_test, qt, scale, N, seq_length, sim_frames)
     
     # network_data = pd.read_pickle('network_values.pkl')
 
