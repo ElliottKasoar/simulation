@@ -1,1 +1,5 @@
-*.pkl filter=lfs diff=lfs merge=lfs -text
+transform.pkl filter=lfs diff=lfs merge=lfs -text
+consts.pkl filter=lfs diff=lfs merge=lfs -text
+init_values.pkl filter=lfs diff=lfs merge=lfs -text
+network_values.pkl filter=lfs diff=lfs merge=lfs -text
+sim_values.pkl filter=lfs diff=lfs merge=lfs -text
