@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Jun 26 00:02:11 2020
-
-@author: Elliott
-"""
 
 import numpy as np
 import pandas as pd
@@ -173,4 +168,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
