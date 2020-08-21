@@ -16,7 +16,6 @@ from keras.layers.advanced_activations import LeakyReLU
 from keras.models import Model
 
 
-
 # Standardise data from a pandas dataframe using QuantileTransformer
 # QuantileTransformer loaded or calculated (and saved) via load flag
 def standardise_data(data, frames, N, load_qt=False, norm=True):
@@ -121,7 +120,6 @@ def save_data(data, N):
     sim_df.to_pickle('network_values.pkl') 
 
 
-
 def process_data(sim_data, frames, N, seq_length, input_dim, output_dim,
                  train_size, stateful, batch_size):
     
@@ -145,7 +143,6 @@ def process_data(sim_data, frames, N, seq_length, input_dim, output_dim,
     print("Data processed")
     
     return x_train, x_test, y_train, y_test, qt, scale
-
 
 
 #Get (Adam) optimiser. Can replace Adam with others if required
