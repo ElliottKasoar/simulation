@@ -131,7 +131,7 @@ def process_data(sim_data, frames, N, seq_length, input_dim, output_dim,
 
     x, y = seq_data(data, seq_length, input_dim, output_dim)
     x_train, x_test, y_train, y_test = train_test_split(x, y, shuffle=False,
-                                                        train_size=train_size)    
+                                                        train_size=train_size)
     
     if stateful:
         crop_train = batch_size * (len(x_train) // batch_size)
@@ -164,8 +164,9 @@ def get_loss_function():
     return 'mean_squared_error'
 
 
-def build_network(optimizer, loss_func, seq_length, input_dim, output_dim, input_nodes,
-                  internal_nodes, internal_layers, batch_size, stateful):
+def build_network(optimizer, loss_func, seq_length, input_dim, output_dim,
+                  input_nodes, internal_nodes, internal_layers, batch_size,
+                  stateful):
     
     if stateful:
         RNN_input = Input(batch_shape=(batch_size, seq_length, input_dim))
@@ -260,8 +261,14 @@ def main():
     print("Network built")
     
     
-    x_train, x_test, y_train, y_test, qt, scale = process_data(sim_data, frames, N, seq_length, input_dim, output_dim,
-                 train_size, stateful, batch_size)
+    x_train, x_test, y_train, y_test, qt, scale = process_data(sim_data,
+                                                               frames, N,
+                                                               seq_length,
+                                                               input_dim,
+                                                               output_dim,
+                                                               train_size,
+                                                               stateful,
+                                                               batch_size)
     
     print("Training network...")
     model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs,
